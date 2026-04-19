@@ -11,42 +11,43 @@ class FileUtil
 public:
     FileUtil(std::string filePath)
         : filePath_(filePath)
-        , file_(filePath, std::ios::binary) // ´ò¿ªÎÄ¼ş£¬¶ş½øÖÆÄ£Ê½
-    {
-    }
+        , file_(filePath, std::ios::binary) // æ‰“å¼€æ–‡ä»¶ï¼ŒäºŒè¿›åˆ¶æ¨¡å¼
+    {}
 
     ~FileUtil()
     {
         file_.close();
     }
 
-    // ÅĞ¶ÏÊÇ·ñÊÇÓĞĞ§Â·¾¶
+    // åˆ¤æ–­æ˜¯å¦æ˜¯æœ‰æ•ˆè·¯å¾„
     bool isValid() const
-    {
-        return file_.is_open();
-    }
-
-    // ÖØÖÃ´ò¿ªÄ¬ÈÏÎÄ¼ş
+    { return file_.is_open(); }
+    
+    // é‡ç½®æ‰“å¼€é»˜è®¤æ–‡ä»¶
     void resetDefaultFile()
     {
         file_.close();
-        file_.open("/Gomoku/GomokuServer/resource/NotFound.html", std::ios::binary);
+#ifdef CHATSERVER_RESOURCE_DIR
+        file_.open(std::string(CHATSERVER_RESOURCE_DIR) + "/NotFound.html", std::ios::binary);
+#else
+        file_.open("../AIApps/ChatServer/resource/NotFound.html", std::ios::binary);
+#endif
     }
 
     uint64_t size()
     {
-        file_.seekg(0, std::ios::end); // ¶¨Î»µ½ÎÄ¼şÄ©Î²
+        file_.seekg(0, std::ios::end); // å®šä½åˆ°æ–‡ä»¶æœ«å°¾
         uint64_t fileSize = file_.tellg();
-        file_.seekg(0, std::ios::beg); // ·µ»Øµ½ÎÄ¼ş¿ªÍ·
+        file_.seekg(0, std::ios::beg); // è¿”å›åˆ°æ–‡ä»¶å¼€å¤´
         return fileSize;
     }
-
+    
     void readFile(std::vector<char>& buffer)
     {
         if (file_.read(buffer.data(), size()))
         {
             LOG_INFO << "File content load into memory (" << size() << " bytes)";
-        }
+        }    
         else
         {
             LOG_ERROR << "File read failed";

@@ -1,36 +1,36 @@
 #pragma once
 #include <string>
 
-namespace ssl
+namespace ssl 
 {
 
-    // SSL/TLS –≠“È∞Ê±æ
-    enum class SSLVersion
-    {
-        TLS_1_0,
-        TLS_1_1,
-        TLS_1_2,
-        TLS_1_3
-    };
+// SSL/TLS ÂçèËÆÆÁâàÊú¨
+enum class SSLVersion 
+{
+    TLS_1_0,
+    TLS_1_1,
+    TLS_1_2,
+    TLS_1_3
+};
 
-    // SSL ¥ÌŒÛ¿‡–Õ
-    enum class SSLError
-    {
-        NONE,
-        WANT_READ,
-        WANT_WRITE,
-        SYSCALL,
-        SSL,
-        UNKNOWN
-    };
+// SSL ÈîôËØØÁ±ªÂûã
+enum class SSLError 
+{
+    NONE,
+    WANT_READ,
+    WANT_WRITE,
+    SYSCALL,
+    SSL,
+    UNKNOWN
+};
 
-    // SSL ◊¥Ã¨
-    enum class SSLState
-    {
-        HANDSHAKE,
-        ESTABLISHED,
-        SHUTDOWN,
-        ERROR
-    };
+// SSL Áä∂ÊÄÅ
+enum class SSLState 
+{
+    HANDSHAKE,
+    ESTABLISHED,
+    SHUTDOWN,
+    ERROR
+};
 
 } // namespace ssl

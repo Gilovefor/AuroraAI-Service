@@ -3,77 +3,77 @@
 
 namespace http
 {
-    namespace router
+namespace router
+{
+
+void Router::registerHandler(HttpRequest::Method method, const std::string &path, HandlerPtr handler)
+{
+    RouteKey key{method, path};
+    handlers_[key] = std::move(handler);
+}
+
+void Router::registerCallback(HttpRequest::Method method, const std::string &path, const HandlerCallback &callback)
+{
+    RouteKey key{method, path};
+    callbacks_[key] = std::move(callback);
+}
+
+bool Router::route(const HttpRequest &req, HttpResponse *resp)
+{
+    RouteKey key{req.method(), req.path()};
+
+    // æŸ¥æ‰¾å¤„ç†å™¨
+    auto handlerIt = handlers_.find(key);
+    if (handlerIt != handlers_.end())
     {
+        handlerIt->second->handle(req, resp);
+        return true;
+    }
 
-        void Router::registerHandler(HttpRequest::Method method, const std::string& path, HandlerPtr handler)
+    // æŸ¥æ‰¾å›è°ƒå‡½æ•°
+    auto callbackIt = callbacks_.find(key);
+    if (callbackIt != callbacks_.end())
+    {
+        callbackIt->second(req, resp);
+        return true;
+    }
+
+    // æŸ¥æ‰¾åŠ¨æ€è·¯ç”±å¤„ç†å™¨
+    for (const auto &[method, pathRegex, handler] : regexHandlers_)
+    {
+        std::smatch match;
+        std::string pathStr(req.path());
+        // å¦‚æœæ–¹æ³•åŒ¹é…å¹¶ä¸”åŠ¨æ€è·¯ç”±åŒ¹é…ï¼Œåˆ™æ‰§è¡Œå¤„ç†å™¨
+        if (method == req.method() && std::regex_match(pathStr, match, pathRegex))
         {
-            RouteKey key{ method, path };
-            handlers_[key] = std::move(handler);
+            // Extract path parameters and add them to the request
+            HttpRequest newReq(req); // å› ä¸ºè¿™é‡Œéœ€è¦ç”¨è¿™ä¸€æ¬¡æ‰€ä»¥æ˜¯å¯ä»¥æ”¹çš„
+            extractPathParameters(match, newReq);
+            
+            handler->handle(newReq, resp);
+            return true;
         }
+    }
 
-        void Router::registerCallback(HttpRequest::Method method, const std::string& path, const HandlerCallback& callback)
+    // æŸ¥æ‰¾åŠ¨æ€è·¯ç”±å›è°ƒå‡½æ•°
+    for (const auto &[method, pathRegex, callback] : regexCallbacks_)
+    {
+        std::smatch match;
+        std::string pathStr(req.path());
+        // å¦‚æœæ–¹æ³•åŒ¹é…å¹¶ä¸”åŠ¨æ€è·¯ç”±åŒ¹é…ï¼Œåˆ™æ‰§è¡Œå›è°ƒå‡½æ•°
+        if (method == req.method() && std::regex_match(pathStr, match, pathRegex))
         {
-            RouteKey key{ method, path };
-            callbacks_[key] = std::move(callback);
+             // Extract path parameters and add them to the request
+            HttpRequest newReq(req); // å› ä¸ºè¿™é‡Œéœ€è¦ç”¨è¿™ä¸€æ¬¡æ‰€ä»¥æ˜¯å¯ä»¥æ”¹çš„
+            extractPathParameters(match, newReq);
+
+            callback(req, resp);
+            return true;
         }
+    }
 
-        bool Router::route(const HttpRequest& req, HttpResponse* resp)
-        {
-            RouteKey key{ req.method(), req.path() };
+    return false;
+}
 
-            // ²éÕÒ´¦ÀíÆ÷
-            auto handlerIt = handlers_.find(key);
-            if (handlerIt != handlers_.end())
-            {
-                handlerIt->second->handle(req, resp);
-                return true;
-            }
-
-            // ²éÕÒ»Øµ÷º¯Êı
-            auto callbackIt = callbacks_.find(key);
-            if (callbackIt != callbacks_.end())
-            {
-                callbackIt->second(req, resp);
-                return true;
-            }
-
-            // ²éÕÒ¶¯Ì¬Â·ÓÉ´¦ÀíÆ÷
-            for (const auto& [method, pathRegex, handler] : regexHandlers_)
-            {
-                std::smatch match;
-                std::string pathStr(req.path());
-                // Èç¹û·½·¨Æ¥Åä²¢ÇÒ¶¯Ì¬Â·ÓÉÆ¥Åä£¬ÔòÖ´ĞĞ´¦ÀíÆ÷
-                if (method == req.method() && std::regex_match(pathStr, match, pathRegex))
-                {
-                    // Extract path parameters and add them to the request
-                    HttpRequest newReq(req); // ÒòÎªÕâÀïĞèÒªÓÃÕâÒ»´ÎËùÒÔÊÇ¿ÉÒÔ¸ÄµÄ
-                    extractPathParameters(match, newReq);
-
-                    handler->handle(newReq, resp);
-                    return true;
-                }
-            }
-
-            // ²éÕÒ¶¯Ì¬Â·ÓÉ»Øµ÷º¯Êı
-            for (const auto& [method, pathRegex, callback] : regexCallbacks_)
-            {
-                std::smatch match;
-                std::string pathStr(req.path());
-                // Èç¹û·½·¨Æ¥Åä²¢ÇÒ¶¯Ì¬Â·ÓÉÆ¥Åä£¬ÔòÖ´ĞĞ»Øµ÷º¯Êı
-                if (method == req.method() && std::regex_match(pathStr, match, pathRegex))
-                {
-                    // Extract path parameters and add them to the request
-                    HttpRequest newReq(req); // ÒòÎªÕâÀïĞèÒªÓÃÕâÒ»´ÎËùÒÔÊÇ¿ÉÒÔ¸ÄµÄ
-                    extractPathParameters(match, newReq);
-
-                    callback(req, resp);
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-    } // namespace router
+} // namespace router
 } // namespace http

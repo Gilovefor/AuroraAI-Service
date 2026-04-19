@@ -1,178 +1,177 @@
-#include "../../include/ssl/SslConnection.h"
+#include "../../include/session/SslConnection.h"
 #include <muduo/base/Logging.h>
 #include <openssl/err.h>
 
 namespace ssl
 {
 
-    // ×Ô¶¨Òå BIO ·½·¨
-    static BIO_METHOD* createCustomBioMethod()
-    {
-        BIO_METHOD* method = BIO_meth_new(BIO_TYPE_MEM, "custom");
-        BIO_meth_set_write(method, SslConnection::bioWrite);
-        BIO_meth_set_read(method, SslConnection::bioRead);
-        BIO_meth_set_ctrl(method, SslConnection::bioCtrl);
-        return method;
+// è‡ªå®šä¹‰ BIO æ–¹æ³•
+static BIO_METHOD* createCustomBioMethod() 
+{
+    BIO_METHOD* method = BIO_meth_new(BIO_TYPE_MEM, "custom");
+    BIO_meth_set_write(method, SslConnection::bioWrite);
+    BIO_meth_set_read(method, SslConnection::bioRead);
+    BIO_meth_set_ctrl(method, SslConnection::bioCtrl);
+    return method;
+}
+
+SslConnection::SslConnection(const TcpConnectionPtr& conn, SslContext* ctx)
+    : ssl_(nullptr)
+    , ctx_(ctx)
+    , conn_(conn)
+    , state_(SSLState::HANDSHAKE)
+    , readBio_(nullptr)
+    , writeBio_(nullptr)
+    , messageCallback_(nullptr)
+{
+    // åˆ›å»º SSL å¯¹è±¡
+    ssl_ = SSL_new(ctx_->getNativeHandle());
+    if (!ssl_) {
+        LOG_ERROR << "Failed to create SSL object: " << ERR_error_string(ERR_get_error(), nullptr);
+        return;
     }
 
-    SslConnection::SslConnection(const TcpConnectionPtr& conn, SslContext* ctx)
-        : ssl_(nullptr)
-        , ctx_(ctx)
-        , conn_(conn)
-        , state_(SSLState::HANDSHAKE)
-        , readBio_(nullptr)
-        , writeBio_(nullptr)
-        , messageCallback_(nullptr)
-    {
-        // ´´½¨ SSL ¶ÔÏó
-        ssl_ = SSL_new(ctx_->getNativeHandle());
-        if (!ssl_) {
-            LOG_ERROR << "Failed to create SSL object: " << ERR_error_string(ERR_get_error(), nullptr);
-            return;
-        }
-
-        // ´´½¨ BIO
-        readBio_ = BIO_new(BIO_s_mem());
-        writeBio_ = BIO_new(BIO_s_mem());
-
-        if (!readBio_ || !writeBio_) {
-            LOG_ERROR << "Failed to create BIO objects";
-            SSL_free(ssl_);
-            ssl_ = nullptr;
-            return;
-        }
-
-        SSL_set_bio(ssl_, readBio_, writeBio_);
-        SSL_set_accept_state(ssl_);  // ÉèÖÃÎª·şÎñÆ÷Ä£Ê½
-
-        // ÉèÖÃ SSL Ñ¡Ïî
-        SSL_set_mode(ssl_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-        SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE);
-
-        // ÉèÖÃÁ¬½Ó»Øµ÷
-        conn_->setMessageCallback(
-            std::bind(&SslConnection::onRead, this, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3));
+    // åˆ›å»º BIO
+    readBio_ = BIO_new(BIO_s_mem());
+    writeBio_ = BIO_new(BIO_s_mem());
+    
+    if (!readBio_ || !writeBio_) {
+        LOG_ERROR << "Failed to create BIO objects";
+        SSL_free(ssl_);
+        ssl_ = nullptr;
+        return;
     }
 
-    SslConnection::~SslConnection()
+    SSL_set_bio(ssl_, readBio_, writeBio_);
+    SSL_set_accept_state(ssl_);  // è®¾ç½®ä¸ºæœåŠ¡å™¨æ¨¡å¼
+    
+    // è®¾ç½® SSL é€‰é¡¹
+    SSL_set_mode(ssl_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+    SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE);
+    
+    // è®¾ç½®è¿æ¥å›è°ƒ
+    conn_->setMessageCallback(
+        std::bind(&SslConnection::onRead, this, std::placeholders::_1,
+                 std::placeholders::_2, std::placeholders::_3));
+}
+
+SslConnection::~SslConnection() 
+{
+    if (ssl_) 
     {
-        if (ssl_)
-        {
-            SSL_free(ssl_);  // Õâ»áÍ¬Ê±ÊÍ·Å BIO
+        SSL_free(ssl_);  // è¿™ä¼šåŒæ—¶é‡Šæ”¾ BIO
+    }
+}
+
+void SslConnection::startHandshake() 
+{
+    SSL_set_accept_state(ssl_);
+    handleHandshake();
+}
+
+void SslConnection::send(const void* data, size_t len) 
+{
+    if (state_ != SSLState::ESTABLISHED) {
+        LOG_ERROR << "Cannot send data before SSL handshake is complete";
+        return;
+    }
+    
+    int written = SSL_write(ssl_, data, len);
+    if (written <= 0) {
+        int err = SSL_get_error(ssl_, written);
+        LOG_ERROR << "SSL_write failed: " << ERR_error_string(err, nullptr);
+        return;
+    }
+    
+    char buf[4096];
+    int pending;
+    while ((pending = BIO_pending(writeBio_)) > 0) {
+        int bytes = BIO_read(writeBio_, buf, 
+                           std::min(pending, static_cast<int>(sizeof(buf))));
+        if (bytes > 0) {
+            conn_->send(buf, bytes);
         }
     }
+}
 
-    void SslConnection::startHandshake()
-    {
-        SSL_set_accept_state(ssl_);
+void SslConnection::onRead(const TcpConnectionPtr& conn, BufferPtr buf, 
+                         muduo::Timestamp time) 
+{
+    if (state_ == SSLState::HANDSHAKE) {
+        // å°†æ•°æ®å†™å…¥ BIO
+        BIO_write(readBio_, buf->peek(), buf->readableBytes());
+        buf->retrieve(buf->readableBytes());
         handleHandshake();
-    }
-
-    void SslConnection::send(const void* data, size_t len)
-    {
-        if (state_ != SSLState::ESTABLISHED) {
-            LOG_ERROR << "Cannot send data before SSL handshake is complete";
-            return;
-        }
-
-        int written = SSL_write(ssl_, data, len);
-        if (written <= 0) {
-            int err = SSL_get_error(ssl_, written);
-            LOG_ERROR << "SSL_write failed: " << ERR_error_string(err, nullptr);
-            return;
-        }
-
-        char buf[4096];
-        int pending;
-        while ((pending = BIO_pending(writeBio_)) > 0) {
-            int bytes = BIO_read(writeBio_, buf,
-                std::min(pending, static_cast<int>(sizeof(buf))));
-            if (bytes > 0) {
-                conn_->send(buf, bytes);
+        return;
+    } else if (state_ == SSLState::ESTABLISHED) {
+        // è§£å¯†æ•°æ®
+        char decryptedData[4096];
+        int ret = SSL_read(ssl_, decryptedData, sizeof(decryptedData));
+        if (ret > 0) {
+            // åˆ›å»ºæ–°çš„ Buffer å­˜å‚¨è§£å¯†åçš„æ•°æ®
+            muduo::net::Buffer decryptedBuffer;
+            decryptedBuffer.append(decryptedData, ret);
+            
+            // è°ƒç”¨ä¸Šå±‚å›è°ƒå¤„ç†è§£å¯†åçš„æ•°æ®
+            if (messageCallback_) {
+                messageCallback_(conn, &decryptedBuffer, time);
             }
         }
     }
+}
 
-    void SslConnection::onRead(const TcpConnectionPtr& conn, BufferPtr buf,
-        muduo::Timestamp time)
-    {
-        if (state_ == SSLState::HANDSHAKE) {
-            // ½«Êı¾İĞ´Èë BIO
-            BIO_write(readBio_, buf->peek(), buf->readableBytes());
-            buf->retrieve(buf->readableBytes());
-            handleHandshake();
-            return;
+void SslConnection::handleHandshake() 
+{
+    int ret = SSL_do_handshake(ssl_);
+    
+    if (ret == 1) {
+        state_ = SSLState::ESTABLISHED;
+        LOG_INFO << "SSL handshake completed successfully";
+        LOG_INFO << "Using cipher: " << SSL_get_cipher(ssl_);
+        LOG_INFO << "Protocol version: " << SSL_get_version(ssl_);
+        
+        // æ¡æ‰‹å®Œæˆåï¼Œç¡®ä¿è®¾ç½®äº†æ­£ç¡®çš„å›è°ƒ
+        if (!messageCallback_) {
+            LOG_WARN << "No message callback set after SSL handshake";
         }
-        else if (state_ == SSLState::ESTABLISHED) {
-            // ½âÃÜÊı¾İ
-            char decryptedData[4096];
-            int ret = SSL_read(ssl_, decryptedData, sizeof(decryptedData));
-            if (ret > 0) {
-                // ´´½¨ĞÂµÄ Buffer ´æ´¢½âÃÜºóµÄÊı¾İ
-                muduo::net::Buffer decryptedBuffer;
-                decryptedBuffer.append(decryptedData, ret);
-
-                // µ÷ÓÃÉÏ²ã»Øµ÷´¦Àí½âÃÜºóµÄÊı¾İ
-                if (messageCallback_) {
-                    messageCallback_(conn, &decryptedBuffer, time);
-                }
-            }
-        }
+        return;
     }
-
-    void SslConnection::handleHandshake()
-    {
-        int ret = SSL_do_handshake(ssl_);
-
-        if (ret == 1) {
-            state_ = SSLState::ESTABLISHED;
-            LOG_INFO << "SSL handshake completed successfully";
-            LOG_INFO << "Using cipher: " << SSL_get_cipher(ssl_);
-            LOG_INFO << "Protocol version: " << SSL_get_version(ssl_);
-
-            // ÎÕÊÖÍê³Éºó£¬È·±£ÉèÖÃÁËÕıÈ·µÄ»Øµ÷
-            if (!messageCallback_) {
-                LOG_WARN << "No message callback set after SSL handshake";
-            }
-            return;
-        }
-
-        int err = SSL_get_error(ssl_, ret);
-        switch (err) {
+    
+    int err = SSL_get_error(ssl_, ret);
+    switch (err) {
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_WRITE:
-            // Õı³£µÄÎÕÊÖ¹ı³Ì£¬ĞèÒª¼ÌĞø
+            // æ­£å¸¸çš„æ¡æ‰‹è¿‡ç¨‹ï¼Œéœ€è¦ç»§ç»­
             break;
-
+            
         default: {
-            // »ñÈ¡ÏêÏ¸µÄ´íÎóĞÅÏ¢
+            // è·å–è¯¦ç»†çš„é”™è¯¯ä¿¡æ¯
             char errBuf[256];
             unsigned long errCode = ERR_get_error();
             ERR_error_string_n(errCode, errBuf, sizeof(errBuf));
             LOG_ERROR << "SSL handshake failed: " << errBuf;
-            conn_->shutdown();  // ¹Ø±ÕÁ¬½Ó
+            conn_->shutdown();  // å…³é—­è¿æ¥
             break;
         }
-        }
     }
+}
 
-    void SslConnection::onEncrypted(const char* data, size_t len)
-    {
-        writeBuffer_.append(data, len);
-        conn_->send(&writeBuffer_);
-    }
+void SslConnection::onEncrypted(const char* data, size_t len) 
+{
+    writeBuffer_.append(data, len);
+    conn_->send(&writeBuffer_);
+}
 
-    void SslConnection::onDecrypted(const char* data, size_t len)
-    {
-        decryptedBuffer_.append(data, len);
-    }
+void SslConnection::onDecrypted(const char* data, size_t len) 
+{
+    decryptedBuffer_.append(data, len);
+}
 
-    SSLError SslConnection::getLastError(int ret)
+SSLError SslConnection::getLastError(int ret) 
+{
+    int err = SSL_get_error(ssl_, ret);
+    switch (err) 
     {
-        int err = SSL_get_error(ssl_, ret);
-        switch (err)
-        {
         case SSL_ERROR_NONE:
             return SSLError::NONE;
         case SSL_ERROR_WANT_READ:
@@ -185,16 +184,16 @@ namespace ssl
             return SSLError::SSL;
         default:
             return SSLError::UNKNOWN;
-        }
     }
+}
 
-    void SslConnection::handleError(SSLError error)
+void SslConnection::handleError(SSLError error) 
+{
+    switch (error) 
     {
-        switch (error)
-        {
         case SSLError::WANT_READ:
         case SSLError::WANT_WRITE:
-            // ĞèÒªµÈ´ı¸ü¶àÊı¾İ»òĞ´Èë»º³åÇø¿ÉÓÃ
+            // éœ€è¦ç­‰å¾…æ›´å¤šæ•°æ®æˆ–å†™å…¥ç¼“å†²åŒºå¯ç”¨
             break;
         case SSLError::SSL:
         case SSLError::SYSCALL:
@@ -205,45 +204,45 @@ namespace ssl
             break;
         default:
             break;
-        }
+    }
+}
+
+int SslConnection::bioWrite(BIO* bio, const char* data, int len) 
+{
+    SslConnection* conn = static_cast<SslConnection*>(BIO_get_data(bio));
+    if (!conn) return -1;
+
+    conn->conn_->send(data, len);
+    return len;
+}
+
+int SslConnection::bioRead(BIO* bio, char* data, int len) 
+{
+    SslConnection* conn = static_cast<SslConnection*>(BIO_get_data(bio));
+    if (!conn) return -1;
+
+    size_t readable = conn->readBuffer_.readableBytes();
+    if (readable == 0) 
+    {
+        return -1;  // æ— æ•°æ®å¯è¯»
     }
 
-    int SslConnection::bioWrite(BIO* bio, const char* data, int len)
+    size_t toRead = std::min(static_cast<size_t>(len), readable);
+    memcpy(data, conn->readBuffer_.peek(), toRead);
+    conn->readBuffer_.retrieve(toRead);
+    return toRead;
+}
+
+long SslConnection::bioCtrl(BIO* bio, int cmd, long num, void* ptr) 
+{
+    switch (cmd) 
     {
-        SslConnection* conn = static_cast<SslConnection*>(BIO_get_data(bio));
-        if (!conn) return -1;
-
-        conn->conn_->send(data, len);
-        return len;
-    }
-
-    int SslConnection::bioRead(BIO* bio, char* data, int len)
-    {
-        SslConnection* conn = static_cast<SslConnection*>(BIO_get_data(bio));
-        if (!conn) return -1;
-
-        size_t readable = conn->readBuffer_.readableBytes();
-        if (readable == 0)
-        {
-            return -1;  // ÎŞÊı¾İ¿É¶Á
-        }
-
-        size_t toRead = std::min(static_cast<size_t>(len), readable);
-        memcpy(data, conn->readBuffer_.peek(), toRead);
-        conn->readBuffer_.retrieve(toRead);
-        return toRead;
-    }
-
-    long SslConnection::bioCtrl(BIO* bio, int cmd, long num, void* ptr)
-    {
-        switch (cmd)
-        {
         case BIO_CTRL_FLUSH:
             return 1;
         default:
             return 0;
-        }
     }
+}
 
 
 } // namespace ssl 

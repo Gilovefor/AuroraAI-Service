@@ -3,31 +3,31 @@
 #include "../http/HttpRequest.h"
 #include "../http/HttpResponse.h"
 
-namespace http
+namespace http 
 {
-    namespace middleware
+namespace middleware 
+{
+
+class Middleware 
+{
+public:
+    virtual ~Middleware() = default;
+    
+    // è¯·æ±‚å‰å¤„ç†
+    virtual void before(HttpRequest& request) = 0;
+    
+    // å“åº”åå¤„ç†
+    virtual void after(HttpResponse& response) = 0;
+    
+    // è®¾ç½®ä¸‹ä¸€ä¸ªä¸­é—´ä»¶
+    void setNext(std::shared_ptr<Middleware> next) 
     {
+        nextMiddleware_ = next;
+    }
 
-        class Middleware
-        {
-        public:
-            virtual ~Middleware() = default;
+protected:
+    std::shared_ptr<Middleware> nextMiddleware_;
+};
 
-            // ÇëÇóÇ°´¦Àí
-            virtual void before(HttpRequest& request) = 0;
-
-            // ÏìÓ¦ºó´¦Àí
-            virtual void after(HttpResponse& response) = 0;
-
-            // ÉèÖÃÏÂÒ»¸öÖĞ¼ä¼ş
-            void setNext(std::shared_ptr<Middleware> next)
-            {
-                nextMiddleware_ = next;
-            }
-
-        protected:
-            std::shared_ptr<Middleware> nextMiddleware_;
-        };
-
-    } // namespace middleware
+} // namespace middleware
 } // namespace http

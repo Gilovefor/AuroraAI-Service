@@ -6,56 +6,56 @@
 #include <thread>
 #include "DbConnection.h"
 
-namespace http
+namespace http 
 {
-    namespace db
+namespace db 
+{
+
+class DbConnectionPool 
+{
+public:
+    // å•ä¾‹æ¨¡å¼
+    static DbConnectionPool& getInstance() 
     {
+        static DbConnectionPool instance;
+        return instance;
+    }
 
-        class DbConnectionPool
-        {
-        public:
-            // µ¥ÀıÄ£Ê½
-            static DbConnectionPool& getInstance()
-            {
-                static DbConnectionPool instance;
-                return instance;
-            }
+    // åˆå§‹åŒ–è¿æ¥æ± 
+    void init(const std::string& host,
+             const std::string& user,
+             const std::string& password,
+             const std::string& database,
+             size_t poolSize = 10);
 
-            // ³õÊ¼»¯Á¬½Ó³Ø
-            void init(const std::string& host,
-                const std::string& user,
-                const std::string& password,
-                const std::string& database,
-                size_t poolSize = 10);
+    // è·å–è¿æ¥
+    std::shared_ptr<DbConnection> getConnection();
 
-            // »ñÈ¡Á¬½Ó
-            std::shared_ptr<DbConnection> getConnection();
+private:
+    // æ„é€ å‡½æ•°
+    DbConnectionPool();
+    // ææ„å‡½æ•°
+    ~DbConnectionPool();
 
-        private:
-            // ¹¹Ôìº¯Êı
-            DbConnectionPool();
-            // Îö¹¹º¯Êı
-            ~DbConnectionPool();
+    // ç¦æ­¢æ‹·è´
+    DbConnectionPool(const DbConnectionPool&) = delete;
+    DbConnectionPool& operator=(const DbConnectionPool&) = delete;
 
-            // ½ûÖ¹¿½±´
-            DbConnectionPool(const DbConnectionPool&) = delete;
-            DbConnectionPool& operator=(const DbConnectionPool&) = delete;
+    std::shared_ptr<DbConnection> createConnection();
 
-            std::shared_ptr<DbConnection> createConnection();
+    void checkConnections(); // æ·»åŠ è¿æ¥æ£€æŸ¥æ–¹æ³•
 
-            void checkConnections(); // Ìí¼ÓÁ¬½Ó¼ì²é·½·¨
+private:
+    std::string                               host_;
+    std::string                               user_;
+    std::string                               password_;
+    std::string                               database_;
+    std::queue<std::shared_ptr<DbConnection>> connections_;
+    std::mutex                                mutex_;
+    std::condition_variable                   cv_;
+    bool                                      initialized_ = false;
+    std::thread                               checkThread_; // æ·»åŠ æ£€æŸ¥çº¿ç¨‹
+};
 
-        private:
-            std::string                               host_;
-            std::string                               user_;
-            std::string                               password_;
-            std::string                               database_;
-            std::queue<std::shared_ptr<DbConnection>> connections_;
-            std::mutex                                mutex_;
-            std::condition_variable                   cv_;
-            bool                                      initialized_ = false;
-            std::thread                               checkThread_; // Ìí¼Ó¼ì²éÏß³Ì
-        };
-
-    } // namespace db
+} // namespace db
 } // namespace http

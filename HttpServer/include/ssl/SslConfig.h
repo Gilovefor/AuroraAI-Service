@@ -3,53 +3,53 @@
 #include <string>
 #include <vector>
 
-namespace ssl
+namespace ssl 
 {
 
-    class SslConfig
-    {
-    public:
-        SslConfig();
-        ~SslConfig() = default;
+class SslConfig 
+{
+public:
+    SslConfig();
+    ~SslConfig() = default;
 
-        // Ö¤ÊéÅäÖÃ
-        void setCertificateFile(const std::string& certFile) { certFile_ = certFile; }
-        void setPrivateKeyFile(const std::string& keyFile) { keyFile_ = keyFile; }
-        void setCertificateChainFile(const std::string& chainFile) { chainFile_ = chainFile; }
+    // è¯ä¹¦é…ç½®
+    void setCertificateFile(const std::string& certFile) { certFile_ = certFile; }
+    void setPrivateKeyFile(const std::string& keyFile) { keyFile_ = keyFile; }
+    void setCertificateChainFile(const std::string& chainFile) { chainFile_ = chainFile; }
+    
+    // åè®®ç‰ˆæœ¬å’ŒåŠ å¯†å¥—ä»¶é…ç½®
+    void setProtocolVersion(SSLVersion version) { version_ = version; }
+    void setCipherList(const std::string& cipherList) { cipherList_ = cipherList; }
+    
+    // å®¢æˆ·ç«¯éªŒè¯é…ç½®
+    void setVerifyClient(bool verify) { verifyClient_ = verify; }
+    void setVerifyDepth(int depth) { verifyDepth_ = depth; }
+    
+    // ä¼šè¯é…ç½®
+    void setSessionTimeout(int seconds) { sessionTimeout_ = seconds; }
+    void setSessionCacheSize(long size) { sessionCacheSize_ = size; }
 
-        // Ğ­Òé°æ±¾ºÍ¼ÓÃÜÌ×¼şÅäÖÃ
-        void setProtocolVersion(SSLVersion version) { version_ = version; }
-        void setCipherList(const std::string& cipherList) { cipherList_ = cipherList; }
+    // Getters
+    const std::string& getCertificateFile() const { return certFile_; }
+    const std::string& getPrivateKeyFile() const { return keyFile_; }
+    const std::string& getCertificateChainFile() const { return chainFile_; }
+    SSLVersion getProtocolVersion() const { return version_; }
+    const std::string& getCipherList() const { return cipherList_; }
+    bool getVerifyClient() const { return verifyClient_; }
+    int getVerifyDepth() const { return verifyDepth_; }
+    int getSessionTimeout() const { return sessionTimeout_; }
+    long getSessionCacheSize() const { return sessionCacheSize_; }
 
-        // ¿Í»§¶ËÑéÖ¤ÅäÖÃ
-        void setVerifyClient(bool verify) { verifyClient_ = verify; }
-        void setVerifyDepth(int depth) { verifyDepth_ = depth; }
-
-        // »á»°ÅäÖÃ
-        void setSessionTimeout(int seconds) { sessionTimeout_ = seconds; }
-        void setSessionCacheSize(long size) { sessionCacheSize_ = size; }
-
-        // Getters
-        const std::string& getCertificateFile() const { return certFile_; }
-        const std::string& getPrivateKeyFile() const { return keyFile_; }
-        const std::string& getCertificateChainFile() const { return chainFile_; }
-        SSLVersion getProtocolVersion() const { return version_; }
-        const std::string& getCipherList() const { return cipherList_; }
-        bool getVerifyClient() const { return verifyClient_; }
-        int getVerifyDepth() const { return verifyDepth_; }
-        int getSessionTimeout() const { return sessionTimeout_; }
-        long getSessionCacheSize() const { return sessionCacheSize_; }
-
-    private:
-        std::string certFile_; // Ö¤ÊéÎÄ¼ş
-        std::string keyFile_; // Ë½Ô¿ÎÄ¼ş
-        std::string chainFile_; // Ö¤ÊéÁ´ÎÄ¼ş
-        SSLVersion  version_; // Ğ­Òé°æ±¾
-        std::string cipherList_; // ¼ÓÃÜÌ×¼ş
-        bool        verifyClient_; // ÊÇ·ñÑéÖ¤¿Í»§¶Ë
-        int         verifyDepth_; // ÑéÖ¤Éî¶È
-        int         sessionTimeout_; // »á»°³¬Ê±Ê±¼ä
-        long        sessionCacheSize_; // »á»°»º´æ´óĞ¡
-    };
+private:
+    std::string certFile_; // è¯ä¹¦æ–‡ä»¶
+    std::string keyFile_; // ç§é’¥æ–‡ä»¶
+    std::string chainFile_; // è¯ä¹¦é“¾æ–‡ä»¶
+    SSLVersion  version_; // åè®®ç‰ˆæœ¬
+    std::string cipherList_; // åŠ å¯†å¥—ä»¶
+    bool        verifyClient_; // æ˜¯å¦éªŒè¯å®¢æˆ·ç«¯
+    int         verifyDepth_; // éªŒè¯æ·±åº¦
+    int         sessionTimeout_; // ä¼šè¯è¶…æ—¶æ—¶é—´
+    long        sessionCacheSize_; // ä¼šè¯ç¼“å­˜å¤§å°
+};
 
 } // namespace ssl

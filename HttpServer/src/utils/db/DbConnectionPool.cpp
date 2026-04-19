@@ -2,166 +2,166 @@
 #include "../../../include/utils/db/DbException.h"
 #include <muduo/base/Logging.h>
 
-namespace http
+namespace http 
 {
-    namespace db
+namespace db 
+{
+
+void DbConnectionPool::init(const std::string& host,
+                          const std::string& user,
+                          const std::string& password,
+                          const std::string& database,
+                          size_t poolSize) 
+{
+    // è¿æ¥æ± ä¼šè¢«å¤šä¸ªçº¿ç¨‹è®¿é—®ï¼Œæ‰€ä»¥æ“ä½œå…¶æˆå‘˜å˜é‡æ—¶éœ€è¦åŠ é”
+    std::lock_guard<std::mutex> lock(mutex_);
+    // ç¡®ä¿åªåˆå§‹åŒ–ä¸€æ¬¡
+    if (initialized_) 
     {
+        return;
+    }
 
-        void DbConnectionPool::init(const std::string& host,
-            const std::string& user,
-            const std::string& password,
-            const std::string& database,
-            size_t poolSize)
+    host_ = host;
+    user_ = user;
+    password_ = password;
+    database_ = database;
+
+    // åˆ›å»ºè¿æ¥
+    for (size_t i = 0; i < poolSize; ++i) 
+    {
+        connections_.push(createConnection());
+    }
+
+    initialized_ = true;
+    LOG_INFO << "Database connection pool initialized with " << poolSize << " connections";
+}
+
+DbConnectionPool::DbConnectionPool() 
+{
+    checkThread_ = std::thread(&DbConnectionPool::checkConnections, this);
+    checkThread_.detach();
+}
+
+DbConnectionPool::~DbConnectionPool() 
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    while (!connections_.empty()) 
+    {
+        connections_.pop();
+    }
+    LOG_INFO << "Database connection pool destroyed";
+}
+
+/* ***************************************
+getConnection æ–¹æ³•ä»è¿æ¥æ± ä¸­è·å–ä¸€ä¸ªå¯ç”¨çš„æ•°æ®åº“è¿æ¥ã€‚
+å¦‚æœæ²¡æœ‰å¯ç”¨è¿æ¥ï¼Œåˆ™ä¼šç­‰å¾…ã€‚å¦‚æœè·å–è¿æ¥å‰æœªåˆå§‹åŒ–ä¼šæŠ›å‡ºå¼‚å¸¸ã€‚
+
+è·å–åˆ°è¿æ¥ä¹‹åéœ€è¦åˆ¤æ–­è¿æ¥æ˜¯å¦æœ‰æ•ˆï¼Œ
+å¦‚æœå¤±æ•ˆåˆ™è¿›è¡Œé‡è¿æ³¨æ„è¿™é‡Œè¿”å›çš„æ™ºèƒ½æŒ‡é’ˆçš„ç¬¬äºŒä¸ªå‚æ•°æ˜¯ä¸€ä¸ªlambadaè¡¨è¾¾å¼ï¼Œ
+ä»£è¡¨é‡å†™std:shared ptrçš„ææ„å‡½æ•°(ä¹Ÿå°±æ˜¯é‡å†™æ™ºèƒ½æŒ‡é’ˆçš„åˆ é™¤å™¨å‡½æ•°)
+******************************************* */
+std::shared_ptr<DbConnection> DbConnectionPool::getConnection() 
+{
+    std::shared_ptr<DbConnection> conn;
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        
+        while (connections_.empty()) 
         {
-            // Á¬½Ó³Ø»á±»¶à¸öÏß³Ì·ÃÎÊ£¬ËùÒÔ²Ù×÷Æä³ÉÔ±±äÁ¿Ê±ĞèÒª¼ÓËø
+            if (!initialized_) 
+            {
+                throw DbException("Connection pool not initialized");
+            }
+            LOG_INFO << "Waiting for available connection...";
+            cv_.wait(lock);
+        }
+        
+        conn = connections_.front();
+        connections_.pop();
+    } // é‡Šæ”¾é”
+    
+    try 
+    {
+        // åœ¨é”å¤–æ£€æŸ¥è¿æ¥
+        if (!conn->ping()) 
+        {
+            LOG_WARN << "Connection lost, attempting to reconnect...";
+            conn->reconnect();
+        }
+        
+        return std::shared_ptr<DbConnection>(conn.get(), 
+            [this, conn](DbConnection*) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                connections_.push(conn);
+                cv_.notify_one();
+            });
+    } 
+    catch (const std::exception& e) 
+    {
+        LOG_ERROR << "Failed to get connection: " << e.what();
+        {
             std::lock_guard<std::mutex> lock(mutex_);
-            // È·±£Ö»³õÊ¼»¯Ò»´Î
-            if (initialized_)
-            {
-                return;
-            }
-
-            host_ = host;
-            user_ = user;
-            password_ = password;
-            database_ = database;
-
-            // ´´½¨Á¬½Ó
-            for (size_t i = 0; i < poolSize; ++i)
-            {
-                connections_.push(createConnection());
-            }
-
-            initialized_ = true;
-            LOG_INFO << "Database connection pool initialized with " << poolSize << " connections";
+            connections_.push(conn);
+            cv_.notify_one();
         }
+        throw;
+    }
+}
 
-        DbConnectionPool::DbConnectionPool()
+std::shared_ptr<DbConnection> DbConnectionPool::createConnection() 
+{
+    return std::make_shared<DbConnection>(host_, user_, password_, database_);
+}
+
+// ä¿®æ”¹æ£€æŸ¥è¿æ¥çš„å‡½æ•°
+void DbConnectionPool::checkConnections() 
+{
+    while (true) 
+    {
+        try 
         {
-            checkThread_ = std::thread(&DbConnectionPool::checkConnections, this);
-            checkThread_.detach();
-        }
-
-        DbConnectionPool::~DbConnectionPool()
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            while (!connections_.empty())
-            {
-                connections_.pop();
-            }
-            LOG_INFO << "Database connection pool destroyed";
-        }
-
-        /* ***************************************
-        getConnection ·½·¨´ÓÁ¬½Ó³ØÖĞ»ñÈ¡Ò»¸ö¿ÉÓÃµÄÊı¾İ¿âÁ¬½Ó¡£
-        Èç¹ûÃ»ÓĞ¿ÉÓÃÁ¬½Ó£¬Ôò»áµÈ´ı¡£Èç¹û»ñÈ¡Á¬½ÓÇ°Î´³õÊ¼»¯»áÅ×³öÒì³£¡£
-
-        »ñÈ¡µ½Á¬½ÓÖ®ºóĞèÒªÅĞ¶ÏÁ¬½ÓÊÇ·ñÓĞĞ§£¬
-        Èç¹ûÊ§Ğ§Ôò½øĞĞÖØÁ¬×¢ÒâÕâÀï·µ»ØµÄÖÇÄÜÖ¸ÕëµÄµÚ¶ş¸ö²ÎÊıÊÇÒ»¸ölambada±í´ïÊ½£¬
-        ´ú±íÖØĞ´std:shared ptrµÄÎö¹¹º¯Êı(Ò²¾ÍÊÇÖØĞ´ÖÇÄÜÖ¸ÕëµÄÉ¾³ıÆ÷º¯Êı)
-        ******************************************* */
-        std::shared_ptr<DbConnection> DbConnectionPool::getConnection()
-        {
-            std::shared_ptr<DbConnection> conn;
+            std::vector<std::shared_ptr<DbConnection>> connsToCheck;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-
-                while (connections_.empty())
+                if (connections_.empty()) 
                 {
-                    if (!initialized_)
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    continue;
+                }
+                
+                auto temp = connections_;
+                while (!temp.empty()) 
+                {
+                    connsToCheck.push_back(temp.front());
+                    temp.pop();
+                }
+            }
+            
+            // åœ¨é”å¤–æ£€æŸ¥è¿æ¥
+            for (auto& conn : connsToCheck) 
+            {
+                if (!conn->ping()) 
+                {
+                    try 
                     {
-                        throw DbException("Connection pool not initialized");
+                        conn->reconnect();
+                    } 
+                    catch (const std::exception& e) 
+                    {
+                        LOG_ERROR << "Failed to reconnect: " << e.what();
                     }
-                    LOG_INFO << "Waiting for available connection...";
-                    cv_.wait(lock);
                 }
-
-                conn = connections_.front();
-                connections_.pop();
-            } // ÊÍ·ÅËø
-
-            try
-            {
-                // ÔÚËøÍâ¼ì²éÁ¬½Ó
-                if (!conn->ping())
-                {
-                    LOG_WARN << "Connection lost, attempting to reconnect...";
-                    conn->reconnect();
-                }
-
-                return std::shared_ptr<DbConnection>(conn.get(),
-                    [this, conn](DbConnection*) {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        connections_.push(conn);
-                        cv_.notify_one();
-                    });
             }
-            catch (const std::exception& e)
-            {
-                LOG_ERROR << "Failed to get connection: " << e.what();
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    connections_.push(conn);
-                    cv_.notify_one();
-                }
-                throw;
-            }
-        }
-
-        std::shared_ptr<DbConnection> DbConnectionPool::createConnection()
+            
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+        } 
+        catch (const std::exception& e) 
         {
-            return std::make_shared<DbConnection>(host_, user_, password_, database_);
+            LOG_ERROR << "Error in check thread: " << e.what();
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
+    }
+}
 
-        // ĞŞ¸Ä¼ì²éÁ¬½ÓµÄº¯Êı
-        void DbConnectionPool::checkConnections()
-        {
-            while (true)
-            {
-                try
-                {
-                    std::vector<std::shared_ptr<DbConnection>> connsToCheck;
-                    {
-                        std::unique_lock<std::mutex> lock(mutex_);
-                        if (connections_.empty())
-                        {
-                            std::this_thread::sleep_for(std::chrono::seconds(1));
-                            continue;
-                        }
-
-                        auto temp = connections_;
-                        while (!temp.empty())
-                        {
-                            connsToCheck.push_back(temp.front());
-                            temp.pop();
-                        }
-                    }
-
-                    // ÔÚËøÍâ¼ì²éÁ¬½Ó
-                    for (auto& conn : connsToCheck)
-                    {
-                        if (!conn->ping())
-                        {
-                            try
-                            {
-                                conn->reconnect();
-                            }
-                            catch (const std::exception& e)
-                            {
-                                LOG_ERROR << "Failed to reconnect: " << e.what();
-                            }
-                        }
-                    }
-
-                    std::this_thread::sleep_for(std::chrono::seconds(60));
-                }
-                catch (const std::exception& e)
-                {
-                    LOG_ERROR << "Error in check thread: " << e.what();
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
-                }
-            }
-        }
-
-    } // namespace db
+} // namespace db
 } // namespace http

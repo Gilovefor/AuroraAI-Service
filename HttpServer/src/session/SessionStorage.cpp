@@ -4,41 +4,41 @@
 namespace http
 {
 
-    namespace session
+namespace session
+{       
+
+void MemorySessionStorage::save(std::shared_ptr<Session> session)
+{
+    // åˆ›å»ºä¼šè¯å‰¯æœ¬å¹¶å­˜å‚¨
+    sessions_[session->getId()] = session;
+}
+
+// é€šè¿‡ä¼šè¯IDä»å­˜å‚¨ä¸­åŠ è½½ä¼šè¯
+std::shared_ptr<Session> MemorySessionStorage::load(const std::string& sessionId)
+{
+    auto it = sessions_.find(sessionId);
+    if (it != sessions_.end())
     {
-
-        void MemorySessionStorage::save(std::shared_ptr<Session> session)
+        if (!it->second->isExpired())
         {
-            // ´´½¨»á»°¸±±¾²¢´æ´¢
-            sessions_[session->getId()] = session;
+            return it->second;
         }
-
-        // Í¨¹ı»á»°ID´Ó´æ´¢ÖĞ¼ÓÔØ»á»°
-        std::shared_ptr<Session> MemorySessionStorage::load(const std::string& sessionId)
+        else
         {
-            auto it = sessions_.find(sessionId);
-            if (it != sessions_.end())
-            {
-                if (!it->second->isExpired())
-                {
-                    return it->second;
-                }
-                else
-                {
-                    // Èç¹û»á»°ÒÑ¹ıÆÚ£¬Ôò´Ó´æ´¢ÖĞÒÆ³ı
-                    sessions_.erase(it);
-                }
-            }
-
-            // Èç¹û»á»°²»´æÔÚ»òÒÑ¹ıÆÚ£¬Ôò·µ»Ønullptr
-            return nullptr;
+            // å¦‚æœä¼šè¯å·²è¿‡æœŸï¼Œåˆ™ä»å­˜å‚¨ä¸­ç§»é™¤
+            sessions_.erase(it);
         }
+    }
 
-        // Í¨¹ı»á»°ID´Ó´æ´¢ÖĞÒÆ³ı»á»°
-        void MemorySessionStorage::remove(const std::string& sessionId)
-        {
-            sessions_.erase(sessionId);
-        }
+    // å¦‚æœä¼šè¯ä¸å­˜åœ¨æˆ–å·²è¿‡æœŸï¼Œåˆ™è¿”å›nullptr
+    return nullptr;
+}
 
-    } // namespace session
+// é€šè¿‡ä¼šè¯IDä»å­˜å‚¨ä¸­ç§»é™¤ä¼šè¯
+void MemorySessionStorage::remove(const std::string& sessionId)
+{
+    sessions_.erase(sessionId);
+}
+
+} // namespace session
 } // namespace http

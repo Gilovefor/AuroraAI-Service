@@ -3,40 +3,40 @@
 
 namespace http
 {
-    namespace middleware
+namespace middleware
+{
+
+void MiddlewareChain::addMiddleware(std::shared_ptr<Middleware> middleware)
+{
+    middlewares_.push_back(middleware);
+}
+
+void MiddlewareChain::processBefore(HttpRequest &request)
+{
+    for (auto &middleware : middlewares_)
     {
+        middleware->before(request);
+    }
+}
 
-        void MiddlewareChain::addMiddleware(std::shared_ptr<Middleware> middleware)
+void MiddlewareChain::processAfter(HttpResponse &response)
+{
+    try
+    {
+        // åå‘å¤„ç†å“åº”ï¼Œä»¥ä¿æŒä¸­é—´ä»¶çš„æ­£ç¡®æ‰§è¡Œé¡ºåº
+        for (auto it = middlewares_.rbegin(); it != middlewares_.rend(); ++it)
         {
-            middlewares_.push_back(middleware);
-        }
-
-        void MiddlewareChain::processBefore(HttpRequest& request)
-        {
-            for (auto& middleware : middlewares_)
-            {
-                middleware->before(request);
+            if (*it)
+            { // æ·»åŠ ç©ºæŒ‡é’ˆæ£€æŸ¥
+                (*it)->after(response);
             }
         }
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERROR << "Error in middleware after processing: " << e.what();
+    }
+}
 
-        void MiddlewareChain::processAfter(HttpResponse& response)
-        {
-            try
-            {
-                // ·´Ïò´¦ÀíÏìÓ¦£¬ÒÔ±£³ÖÖÐ¼ä¼þµÄÕýÈ·Ö´ÐÐË³Ðò
-                for (auto it = middlewares_.rbegin(); it != middlewares_.rend(); ++it)
-                {
-                    if (*it)
-                    { // Ìí¼Ó¿ÕÖ¸Õë¼ì²é
-                        (*it)->after(response);
-                    }
-                }
-            }
-            catch (const std::exception& e)
-            {
-                LOG_ERROR << "Error in middleware after processing: " << e.what();
-            }
-        }
-
-    } // namespace middleware
+} // namespace middleware
 } // namespace http

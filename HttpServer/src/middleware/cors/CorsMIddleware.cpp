@@ -4,119 +4,119 @@
 #include <iostream>
 #include <muduo/base/Logging.h>
 
-namespace http
+namespace http 
 {
-    namespace middleware
+namespace middleware 
+{
+
+CorsMiddleware::CorsMiddleware(const CorsConfig& config) : config_(config) {}
+
+void CorsMiddleware::before(HttpRequest& request) 
+{
+    LOG_DEBUG << "CorsMiddleware::before - Processing request";
+    
+    if (request.method() == HttpRequest::Method::kOptions) 
     {
+        LOG_INFO << "Processing CORS preflight request";
+        HttpResponse response;
+        handlePreflightRequest(request, response);
+        throw response;
+    }
+}
 
-        CorsMiddleware::CorsMiddleware(const CorsConfig& config) : config_(config) {}
-
-        void CorsMiddleware::before(HttpRequest& request)
+void CorsMiddleware::after(HttpResponse& response) 
+{
+    LOG_DEBUG << "CorsMiddleware::after - Processing response";
+    
+    // ç›´æŽ¥æ·»åŠ CORSå¤´ï¼Œç®€åŒ–å¤„ç†é€»è¾‘
+    if (!config_.allowedOrigins.empty()) 
+    {
+        // å¦‚æžœå…è®¸æ‰€æœ‰æº
+        if (std::find(config_.allowedOrigins.begin(), config_.allowedOrigins.end(), "*") 
+            != config_.allowedOrigins.end()) 
         {
-            LOG_DEBUG << "CorsMiddleware::before - Processing request";
-
-            if (request.method() == HttpRequest::Method::kOptions)
-            {
-                LOG_INFO << "Processing CORS preflight request";
-                HttpResponse response;
-                handlePreflightRequest(request, response);
-                throw response;
-            }
+            addCorsHeaders(response, "*");
+        } 
+        else 
+        {
+            // æ·»åŠ ç¬¬ä¸€ä¸ªå…è®¸çš„æº
+            addCorsHeaders(response, config_.allowedOrigins[0]);
         }
+    }
+}
 
-        void CorsMiddleware::after(HttpResponse& response)
-        {
-            LOG_DEBUG << "CorsMiddleware::after - Processing response";
-
-            // Ö±½ÓÌí¼ÓCORSÍ·£¬¼ò»¯´¦ÀíÂß¼­
-            if (!config_.allowedOrigins.empty())
-            {
-                // Èç¹ûÔÊÐíËùÓÐÔ´
-                if (std::find(config_.allowedOrigins.begin(), config_.allowedOrigins.end(), "*")
-                    != config_.allowedOrigins.end())
-                {
-                    addCorsHeaders(response, "*");
-                }
-                else
-                {
-                    // Ìí¼ÓµÚÒ»¸öÔÊÐíµÄÔ´
-                    addCorsHeaders(response, config_.allowedOrigins[0]);
-                }
-            }
-        }
-
-        bool CorsMiddleware::isOriginAllowed(const std::string& origin) const
-        {
-            return config_.allowedOrigins.empty() ||
-                std::find(config_.allowedOrigins.begin(),
+bool CorsMiddleware::isOriginAllowed(const std::string& origin) const 
+{
+    return config_.allowedOrigins.empty() || 
+           std::find(config_.allowedOrigins.begin(), 
                     config_.allowedOrigins.end(), "*") != config_.allowedOrigins.end() ||
-                std::find(config_.allowedOrigins.begin(),
+           std::find(config_.allowedOrigins.begin(), 
                     config_.allowedOrigins.end(), origin) != config_.allowedOrigins.end();
-        }
+}
 
-        void CorsMiddleware::handlePreflightRequest(const HttpRequest& request,
-            HttpResponse& response)
+void CorsMiddleware::handlePreflightRequest(const HttpRequest& request, 
+                                          HttpResponse& response) 
+{
+    const std::string& origin = request.getHeader("Origin");
+    
+    if (!isOriginAllowed(origin)) 
+    {
+        LOG_WARN << "Origin not allowed: " << origin;
+        response.setStatusCode(HttpResponse::k403Forbidden);
+        return;
+    }
+
+    addCorsHeaders(response, origin);
+    response.setStatusCode(HttpResponse::k204NoContent);
+    LOG_INFO << "Preflight request processed successfully";
+}
+
+void CorsMiddleware::addCorsHeaders(HttpResponse& response, 
+                                  const std::string& origin) 
+{
+    try 
+    {
+        response.addHeader("Access-Control-Allow-Origin", origin);
+        
+        if (config_.allowCredentials) 
         {
-            const std::string& origin = request.getHeader("Origin");
-
-            if (!isOriginAllowed(origin))
-            {
-                LOG_WARN << "Origin not allowed: " << origin;
-                response.setStatusCode(HttpResponse::k403Forbidden);
-                return;
-            }
-
-            addCorsHeaders(response, origin);
-            response.setStatusCode(HttpResponse::k204NoContent);
-            LOG_INFO << "Preflight request processed successfully";
+            response.addHeader("Access-Control-Allow-Credentials", "true");
         }
-
-        void CorsMiddleware::addCorsHeaders(HttpResponse& response,
-            const std::string& origin)
+        
+        if (!config_.allowedMethods.empty()) 
         {
-            try
-            {
-                response.addHeader("Access-Control-Allow-Origin", origin);
-
-                if (config_.allowCredentials)
-                {
-                    response.addHeader("Access-Control-Allow-Credentials", "true");
-                }
-
-                if (!config_.allowedMethods.empty())
-                {
-                    response.addHeader("Access-Control-Allow-Methods",
-                        join(config_.allowedMethods, ", "));
-                }
-
-                if (!config_.allowedHeaders.empty())
-                {
-                    response.addHeader("Access-Control-Allow-Headers",
-                        join(config_.allowedHeaders, ", "));
-                }
-
-                response.addHeader("Access-Control-Max-Age",
-                    std::to_string(config_.maxAge));
-
-                LOG_DEBUG << "CORS headers added successfully";
-            }
-            catch (const std::exception& e)
-            {
-                LOG_ERROR << "Error adding CORS headers: " << e.what();
-            }
+            response.addHeader("Access-Control-Allow-Methods", 
+                             join(config_.allowedMethods, ", "));
         }
-
-        // ¹¤¾ßº¯Êý£º½«×Ö·û´®Êý×éÁ¬½Ó³Éµ¥¸ö×Ö·û´®
-        std::string CorsMiddleware::join(const std::vector<std::string>& strings, const std::string& delimiter)
+        
+        if (!config_.allowedHeaders.empty()) 
         {
-            std::ostringstream result;
-            for (size_t i = 0; i < strings.size(); ++i)
-            {
-                if (i > 0) result << delimiter;
-                result << strings[i];
-            }
-            return result.str();
+            response.addHeader("Access-Control-Allow-Headers", 
+                             join(config_.allowedHeaders, ", "));
         }
+        
+        response.addHeader("Access-Control-Max-Age", 
+                          std::to_string(config_.maxAge));
+        
+        LOG_DEBUG << "CORS headers added successfully";
+    } 
+    catch (const std::exception& e) 
+    {
+        LOG_ERROR << "Error adding CORS headers: " << e.what();
+    }
+}
 
-    } // namespace middleware
+// å·¥å…·å‡½æ•°ï¼šå°†å­—ç¬¦ä¸²æ•°ç»„è¿žæŽ¥æˆå•ä¸ªå­—ç¬¦ä¸²
+std::string CorsMiddleware::join(const std::vector<std::string>& strings, const std::string& delimiter) 
+{
+    std::ostringstream result;
+    for (size_t i = 0; i < strings.size(); ++i) 
+    {
+        if (i > 0) result << delimiter;
+        result << strings[i];
+    }
+    return result.str();
+}
+
+} // namespace middleware
 } // namespace http

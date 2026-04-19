@@ -2,158 +2,158 @@
 #include "../../../include/utils/db/DbException.h"
 #include <muduo/base/Logging.h>
 
-namespace http
+namespace http 
 {
-    namespace db
+namespace db 
+{
+
+//æ„é€ å‡½æ•°ï¼šåˆå§‹åŒ–æ•°æ®åº“è¿æ¥
+DbConnection::DbConnection(const std::string& host,
+                         const std::string& user,
+                         const std::string& password,
+                         const std::string& database)
+    : host_(host)
+    , user_(user)
+    , password_(password)
+    , database_(database)
+{
+    try 
     {
-
-        //¹¹Ôìº¯Êı£º³õÊ¼»¯Êı¾İ¿âÁ¬½Ó
-        DbConnection::DbConnection(const std::string& host,
-            const std::string& user,
-            const std::string& password,
-            const std::string& database)
-            : host_(host)
-            , user_(user)
-            , password_(password)
-            , database_(database)
+        sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
+        conn_.reset(driver->connect(host_, user_, password_));
+        if (conn_) 
         {
-            try
-            {
-                sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
-                conn_.reset(driver->connect(host_, user_, password_));
-                if (conn_)
-                {
-                    conn_->setSchema(database_);
-
-                    // ÉèÖÃÁ¬½ÓÊôĞÔ
-                    conn_->setClientOption("OPT_RECONNECT", "true");
-                    conn_->setClientOption("OPT_CONNECT_TIMEOUT", "10");
-                    conn_->setClientOption("multi_statements", "false");
-
-                    // ÉèÖÃ×Ö·û¼¯
-                    std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
-                    stmt->execute("SET NAMES utf8mb4");
-
-                    LOG_INFO << "Database connection established";
-                }
-            }
-            catch (const sql::SQLException& e)
-            {
-                LOG_ERROR << "Failed to create database connection: " << e.what();
-                throw DbException(e.what());
-            }
+            conn_->setSchema(database_);
+            
+            // è®¾ç½®è¿æ¥å±æ€§
+            conn_->setClientOption("OPT_RECONNECT", "true");
+            conn_->setClientOption("OPT_CONNECT_TIMEOUT", "10");
+            conn_->setClientOption("multi_statements", "false");
+            
+            // è®¾ç½®å­—ç¬¦é›†
+            std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+            stmt->execute("SET NAMES utf8mb4");
+            
+            LOG_INFO << "Database connection established";
         }
+    } 
+    catch (const sql::SQLException& e) 
+    {
+        LOG_ERROR << "Failed to create database connection: " << e.what();
+        throw DbException(e.what());
+    }
+}
 
-        // Îö¹¹º¯Êı£ºÇåÀíÊı¾İ¿âÁ¬½Ó
-        DbConnection::~DbConnection()
+// ææ„å‡½æ•°ï¼šæ¸…ç†æ•°æ®åº“è¿æ¥
+DbConnection::~DbConnection() 
+{
+    try 
+    {
+        cleanup();
+    } 
+    catch (...) 
+    {
+        // ææ„å‡½æ•°ä¸­ä¸æŠ›å‡ºå¼‚å¸¸
+    }
+    LOG_INFO << "Database connection closed";
+}
+
+// æ£€æŸ¥è¿æ¥æ˜¯å¦å­˜æ´»
+bool DbConnection::ping() 
+{
+    try 
+    {
+        // ä¸ä½¿ç”¨ getStmtï¼Œç›´æ¥åˆ›å»ºæ–°çš„è¯­å¥
+        std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+        std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery("SELECT 1"));
+        return true;
+    } 
+    catch (const sql::SQLException& e) 
+    {
+        LOG_ERROR << "Ping failed: " << e.what();
+        return false;
+    }
+}
+
+// æ£€æŸ¥è¿æ¥æ˜¯å¦æœ‰æ•ˆ
+bool DbConnection::isValid() 
+{
+    try 
+    {
+        if (!conn_) return false;
+        std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+        stmt->execute("SELECT 1");
+        return true;
+    } 
+    catch (const sql::SQLException&) 
+    {
+        return false;
+    }
+}
+
+// é‡è¿æ•°æ®åº“
+void DbConnection::reconnect() 
+{
+    try 
+    {
+        if (conn_) 
         {
-            try
-            {
-                cleanup();
-            }
-            catch (...)
-            {
-                // Îö¹¹º¯ÊıÖĞ²»Å×³öÒì³£
-            }
-            LOG_INFO << "Database connection closed";
+            conn_->reconnect();
+        } 
+        else 
+        {
+            sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
+            conn_.reset(driver->connect(host_, user_, password_));
+            conn_->setSchema(database_);
         }
+    } 
+    catch (const sql::SQLException& e) 
+    {
+        LOG_ERROR << "Reconnect failed: " << e.what();
+        throw DbException(e.what());
+    }
+}
 
-        // ¼ì²éÁ¬½ÓÊÇ·ñ´æ»î
-        bool DbConnection::ping()
+// æ¸…ç†è¿æ¥çŠ¶æ€
+void DbConnection::cleanup() 
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    try 
+    {
+        if (conn_) 
         {
-            try
+            // ç¡®ä¿æ‰€æœ‰äº‹åŠ¡éƒ½å·²å®Œæˆ
+            if (!conn_->getAutoCommit()) 
             {
-                // ²»Ê¹ÓÃ getStmt£¬Ö±½Ó´´½¨ĞÂµÄÓï¾ä
-                std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
-                std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery("SELECT 1"));
-                return true;
+                conn_->rollback();
+                conn_->setAutoCommit(true);
             }
-            catch (const sql::SQLException& e)
+            
+            // æ¸…ç†æ‰€æœ‰æœªå¤„ç†çš„ç»“æœé›†
+            std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
+            while (stmt->getMoreResults()) 
             {
-                LOG_ERROR << "Ping failed: " << e.what();
-                return false;
-            }
-        }
-
-        // ¼ì²éÁ¬½ÓÊÇ·ñÓĞĞ§
-        bool DbConnection::isValid()
-        {
-            try
-            {
-                if (!conn_) return false;
-                std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
-                stmt->execute("SELECT 1");
-                return true;
-            }
-            catch (const sql::SQLException&)
-            {
-                return false;
-            }
-        }
-
-        // ÖØÁ¬Êı¾İ¿â
-        void DbConnection::reconnect()
-        {
-            try
-            {
-                if (conn_)
+                auto result = stmt->getResultSet();
+                while (result && result->next()) 
                 {
-                    conn_->reconnect();
-                }
-                else
-                {
-                    sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
-                    conn_.reset(driver->connect(host_, user_, password_));
-                    conn_->setSchema(database_);
-                }
-            }
-            catch (const sql::SQLException& e)
-            {
-                LOG_ERROR << "Reconnect failed: " << e.what();
-                throw DbException(e.what());
-            }
-        }
-
-        // ÇåÀíÁ¬½Ó×´Ì¬
-        void DbConnection::cleanup()
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            try
-            {
-                if (conn_)
-                {
-                    // È·±£ËùÓĞÊÂÎñ¶¼ÒÑÍê³É
-                    if (!conn_->getAutoCommit())
-                    {
-                        conn_->rollback();
-                        conn_->setAutoCommit(true);
-                    }
-
-                    // ÇåÀíËùÓĞÎ´´¦ÀíµÄ½á¹û¼¯
-                    std::unique_ptr<sql::Statement> stmt(conn_->createStatement());
-                    while (stmt->getMoreResults())
-                    {
-                        auto result = stmt->getResultSet();
-                        while (result && result->next())
-                        {
-                            // Ïû·ÑËùÓĞ½á¹û
-                        }
-                    }
-                }
-            }
-            catch (const std::exception& e)
-            {
-                LOG_WARN << "Error cleaning up connection: " << e.what();
-                try
-                {
-                    reconnect();
-                }
-                catch (...)
-                {
-                    // ºöÂÔÖØÁ¬´íÎó
+                    // æ¶ˆè´¹æ‰€æœ‰ç»“æœ
                 }
             }
         }
+    } 
+    catch (const std::exception& e) 
+    {
+        LOG_WARN << "Error cleaning up connection: " << e.what();
+        try 
+        {
+            reconnect();
+        } 
+        catch (...) 
+        {
+            // å¿½ç•¥é‡è¿é”™è¯¯
+        }
+    }
+}
 
-    } // namespace db
+} // namespace db
 } // namespace http

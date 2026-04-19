@@ -8,37 +8,37 @@
 
 namespace http
 {
-    namespace session
+namespace session
+{
+
+class SessionManager
+{
+public:
+    explicit SessionManager(std::unique_ptr<SessionStorage> storage);
+
+    // ä»è¯·æ±‚ä¸­è·å–æˆ–åˆ›å»ºä¼šè¯
+    std::shared_ptr<Session> getSession(const HttpRequest& req, HttpResponse* resp);
+    
+     // é”€æ¯ä¼šè¯
+    void destroySession(const std::string& sessionId);
+
+    // æ¸…ç†è¿‡æœŸä¼šè¯
+    void cleanExpiredSessions();
+
+    // æ›´æ–°ä¼šè¯
+    void updateSession(std::shared_ptr<Session> session)
     {
+        storage_->save(session);
+    }
+private:
+    std::string generateSessionId();
+    std::string getSessionIdFromCookie(const HttpRequest& req);
+    void setSessionCookie(const std::string& sessionId, HttpResponse* resp);
 
-        class SessionManager
-        {
-        public:
-            explicit SessionManager(std::unique_ptr<SessionStorage> storage);
+private:
+    std::unique_ptr<SessionStorage> storage_;
+    std::mt19937 rng_; // ç”¨äºç”Ÿæˆéšæœºä¼šè¯id
+};
 
-            // ´ÓÇëÇóÖĞ»ñÈ¡»ò´´½¨»á»°
-            std::shared_ptr<Session> getSession(const HttpRequest& req, HttpResponse* resp);
-
-            // Ïú»Ù»á»°
-            void destroySession(const std::string& sessionId);
-
-            // ÇåÀí¹ıÆÚ»á»°
-            void cleanExpiredSessions();
-
-            // ¸üĞÂ»á»°
-            void updateSession(std::shared_ptr<Session> session)
-            {
-                storage_->save(session);
-            }
-        private:
-            std::string generateSessionId();
-            std::string getSessionIdFromCookie(const HttpRequest& req);
-            void setSessionCookie(const std::string& sessionId, HttpResponse* resp);
-
-        private:
-            std::unique_ptr<SessionStorage> storage_;
-            std::mt19937 rng_; // ÓÃÓÚÉú³ÉËæ»ú»á»°id
-        };
-
-    } // namespace session
+} // namespace session
 } // namespace http

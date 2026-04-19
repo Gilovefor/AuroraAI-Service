@@ -7,200 +7,200 @@
 namespace http
 {
 
-    // Ä¬ÈÏhttp»ØÓ¦º¯Êı
-    void defaultHttpCallback(const HttpRequest&, HttpResponse* resp)
-    {
-        resp->setStatusCode(HttpResponse::k404NotFound);
-        resp->setStatusMessage("Not Found");
-        resp->setCloseConnection(true);
-    }
+// é»˜è®¤httpå›åº”å‡½æ•°
+void defaultHttpCallback(const HttpRequest &, HttpResponse *resp)
+{
+    resp->setStatusCode(HttpResponse::k404NotFound);
+    resp->setStatusMessage("Not Found");
+    resp->setCloseConnection(true);
+}
 
-    HttpServer::HttpServer(int port,
-        const std::string& name,
-        bool useSSL,
-        muduo::net::TcpServer::Option option)
-        : listenAddr_(port)
-        , server_(&mainLoop_, listenAddr_, name, option)
-        , useSSL_(useSSL)
-        , httpCallback_(std::bind(&HttpServer::handleRequest, this, std::placeholders::_1, std::placeholders::_2))
-    {
-        initialize();
-    }
+HttpServer::HttpServer(int port,
+                       const std::string &name,
+                       bool useSSL,
+                       muduo::net::TcpServer::Option option)
+    : listenAddr_(port)
+    , server_(&mainLoop_, listenAddr_, name, option)
+    , useSSL_(useSSL)
+    , httpCallback_(std::bind(&HttpServer::handleRequest, this, std::placeholders::_1, std::placeholders::_2))
+{
+    initialize();
+}
 
-    // ·şÎñÆ÷ÔËĞĞº¯Êı
-    void HttpServer::start()
-    {
-        LOG_WARN << "HttpServer[" << server_.name() << "] starts listening on" << server_.ipPort();
-        server_.start();
-        mainLoop_.loop();
-    }
+// æœåŠ¡å™¨è¿è¡Œå‡½æ•°
+void HttpServer::start()
+{
+    LOG_WARN << "HttpServer[" << server_.name() << "] starts listening on" << server_.ipPort();
+    server_.start();
+    mainLoop_.loop();
+}
 
-    void HttpServer::initialize()
-    {
-        // ÉèÖÃ»Øµ÷º¯Êı
-        server_.setConnectionCallback(
-            std::bind(&HttpServer::onConnection, this, std::placeholders::_1));
-		server_.setMessageCallback(
-                std::bind(&HttpServer::onMessage, this,
-                std::placeholders::_1,
-                std::placeholders::_2,
-                std::placeholders::_3));
-    }
+void HttpServer::initialize()
+{
+    // è®¾ç½®å›è°ƒå‡½æ•°
+    server_.setConnectionCallback(
+        std::bind(&HttpServer::onConnection, this, std::placeholders::_1));
+    server_.setMessageCallback(
+        std::bind(&HttpServer::onMessage, this,
+                  std::placeholders::_1,
+                  std::placeholders::_2,
+                  std::placeholders::_3));
+}
 
-    void HttpServer::setSslConfig(const ssl::SslConfig& config)
+void HttpServer::setSslConfig(const ssl::SslConfig& config)
+{
+    if (useSSL_)
+    {
+        sslCtx_ = std::make_unique<ssl::SslContext>(config);
+        if (!sslCtx_->initialize())
+        {
+            LOG_ERROR << "Failed to initialize SSL context";
+            abort();
+        }
+    }
+}
+
+//æ–°è¿æ¥å»ºç«‹æ—¶å›è°ƒ
+void HttpServer::onConnection(const muduo::net::TcpConnectionPtr& conn)
+{
+    if (conn->connected())
     {
         if (useSSL_)
         {
-            sslCtx_ = std::make_unique<ssl::SslContext>(config);
-            if (!sslCtx_->initialize())
-            {
-                LOG_ERROR << "Failed to initialize SSL context";
-                abort();
-            }
+            auto sslConn = std::make_unique<ssl::SslConnection>(conn, sslCtx_.get());
+            sslConn->setMessageCallback(
+                std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+            sslConns_[conn] = std::move(sslConn);
+            sslConns_[conn]->startHandshake();
+        }
+        conn->setContext(HttpContext());
+    }
+    else 
+    {
+        if (useSSL_)
+        {
+            sslConns_.erase(conn);
         }
     }
+}
 
-    //ĞÂÁ¬½Ó½¨Á¢Ê±»Øµ÷
-    void HttpServer::onConnection(const muduo::net::TcpConnectionPtr& conn)
+//æ¥æ”¶è¿æ¥æ•°æ®çš„æ¶ˆæ¯å›è°ƒ
+void HttpServer::onMessage(const muduo::net::TcpConnectionPtr &conn,
+                           muduo::net::Buffer *buf,
+                           muduo::Timestamp receiveTime)
+{
+    try
     {
-        if (conn->connected())
+        // è¿™å±‚åˆ¤æ–­åªæ˜¯ä»£è¡¨æ˜¯å¦æ”¯æŒssl
+        if (useSSL_)
         {
-            if (useSSL_)
+            LOG_INFO << "onMessage useSSL_ is true";
+            // 1.æŸ¥æ‰¾å¯¹åº”çš„SSLè¿æ¥
+            auto it = sslConns_.find(conn);
+            if (it != sslConns_.end())
             {
-                auto sslConn = std::make_unique<ssl::SslConnection>(conn, sslCtx_.get());
-                sslConn->setMessageCallback(
-                    std::bind(&HttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-                sslConns_[conn] = std::move(sslConn);
-                sslConns_[conn]->startHandshake();
-            }
-            conn->setContext(HttpContext());
-        }
-        else
-        {
-            if (useSSL_)
-            {
-                sslConns_.erase(conn);
-            }
-        }
-    }
+                LOG_INFO << "onMessage sslConns_ is not empty";
+                // 2. SSLè¿æ¥å¤„ç†æ•°æ®
+                it->second->onRead(conn, buf, receiveTime);
 
-    //½ÓÊÕÁ¬½ÓÊı¾İµÄÏûÏ¢»Øµ÷
-    void HttpServer::onMessage(const muduo::net::TcpConnectionPtr& conn,
-        muduo::net::Buffer* buf,
-        muduo::Timestamp receiveTime)
-    {
-        try
-        {
-            // Õâ²ãÅĞ¶ÏÖ»ÊÇ´ú±íÊÇ·ñÖ§³Össl
-            if (useSSL_)
-            {
-                LOG_INFO << "onMessage useSSL_ is true";
-                // 1.²éÕÒ¶ÔÓ¦µÄSSLÁ¬½Ó
-                auto it = sslConns_.find(conn);
-                if (it != sslConns_.end())
+                // 3. å¦‚æœ SSL æ¡æ‰‹è¿˜æœªå®Œæˆï¼Œç›´æ¥è¿”å›
+                if (!it->second->isHandshakeCompleted())
                 {
                     LOG_INFO << "onMessage sslConns_ is not empty";
-                    // 2. SSLÁ¬½Ó´¦ÀíÊı¾İ
-                    it->second->onRead(conn, buf, receiveTime);
-
-                    // 3. Èç¹û SSL ÎÕÊÖ»¹Î´Íê³É£¬Ö±½Ó·µ»Ø
-                    if (!it->second->isHandshakeCompleted())
-                    {
-                        LOG_INFO << "onMessage sslConns_ is not empty";
-                        return;
-                    }
-
-                    // 4. ´ÓSSLÁ¬½ÓµÄ½âÃÜ»º³åÇø»ñÈ¡Êı¾İ
-                    muduo::net::Buffer* decryptedBuf = it->second->getDecryptedBuffer();
-                    if (decryptedBuf->readableBytes() == 0)
-                        return; // Ã»ÓĞ½âÃÜºóµÄÊı¾İ
-
-                    // 5. Ê¹ÓÃ½âÃÜºóµÄÊı¾İ½øĞĞHTTP ´¦Àí
-                    buf = decryptedBuf; // ½« buf Ö¸Ïò½âÃÜºóµÄÊı¾İ
-                    LOG_INFO << "onMessage decryptedBuf is not empty";
+                    return;
                 }
-            }
-            // HttpContext¶ÔÏóÓÃÓÚ½âÎö³öbufÖĞµÄÇëÇó±¨ÎÄ£¬²¢°Ñ±¨ÎÄµÄ¹Ø¼üĞÅÏ¢·â×°µ½HttpRequest¶ÔÏóÖĞ
-            HttpContext* context = boost::any_cast<HttpContext>(conn->getMutableContext());
-            if (!context->parseRequest(buf, receiveTime)) // ½âÎöÒ»¸öhttpÇëÇó
-            {
-                // Èç¹û½âÎöhttp±¨ÎÄ¹ı³ÌÖĞ³ö´í
-                conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
-                conn->shutdown();
-            }
-            // Èç¹ûbuf»º³åÇøÖĞ½âÎö³öÒ»¸öÍêÕûµÄÊı¾İ°ü²Å·â×°ÏìÓ¦±¨ÎÄ
-            if (context->gotAll())
-            {
-                onRequest(conn, context->request());
-                context->reset();
+
+                // 4. ä»SSLè¿æ¥çš„è§£å¯†ç¼“å†²åŒºè·å–æ•°æ®
+                muduo::net::Buffer* decryptedBuf = it->second->getDecryptedBuffer();
+                if (decryptedBuf->readableBytes() == 0)
+                    return; // æ²¡æœ‰è§£å¯†åçš„æ•°æ®
+
+                // 5. ä½¿ç”¨è§£å¯†åçš„æ•°æ®è¿›è¡ŒHTTP å¤„ç†
+                buf = decryptedBuf; // å°† buf æŒ‡å‘è§£å¯†åçš„æ•°æ®
+                LOG_INFO << "onMessage decryptedBuf is not empty";
             }
         }
-        catch (const std::exception& e)
+        // HttpContextå¯¹è±¡ç”¨äºè§£æå‡ºbufä¸­çš„è¯·æ±‚æŠ¥æ–‡ï¼Œå¹¶æŠŠæŠ¥æ–‡çš„å…³é”®ä¿¡æ¯å°è£…åˆ°HttpRequestå¯¹è±¡ä¸­
+        HttpContext *context = boost::any_cast<HttpContext>(conn->getMutableContext());
+        if (!context->parseRequest(buf, receiveTime)) // è§£æä¸€ä¸ªhttpè¯·æ±‚
         {
-            // ²¶»ñÒì³££¬·µ»Ø´íÎóĞÅÏ¢
-            LOG_ERROR << "Exception in onMessage: " << e.what();
+            // å¦‚æœè§£æhttpæŠ¥æ–‡è¿‡ç¨‹ä¸­å‡ºé”™
             conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
             conn->shutdown();
         }
+        // å¦‚æœbufç¼“å†²åŒºä¸­è§£æå‡ºä¸€ä¸ªå®Œæ•´çš„æ•°æ®åŒ…æ‰å°è£…å“åº”æŠ¥æ–‡
+        if (context->gotAll())
+        {
+            onRequest(conn, context->request());                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+            context->reset();
+        }
     }
-
-    void HttpServer::onRequest(const muduo::net::TcpConnectionPtr& conn, const HttpRequest& req)
+    catch (const std::exception &e)
     {
-        const std::string& connection = req.getHeader("Connection");
-        bool close = ((connection == "close") ||
-            (req.getVersion() == "HTTP/1.0" && connection != "Keep-Alive"));
-        HttpResponse response(close);
-
-        // ¸ù¾İÇëÇó±¨ÎÄĞÅÏ¢À´·â×°ÏìÓ¦±¨ÎÄ¶ÔÏó
-        httpCallback_(req, &response); // Ö´ĞĞonHttpCallbackº¯Êı
-
-        // ¿ÉÒÔ¸øresponseÉèÖÃÒ»¸ö³ÉÔ±£¬ÅĞ¶ÏÊÇ·ñÇëÇóµÄÊÇÎÄ¼ş£¬Èç¹ûÊÇÎÄ¼şÉèÖÃÎªtrue£¬²¢ÇÒ´æÔÚÎÄ¼şÎ»ÖÃÔÚÕâÀïsend³öÈ¥¡£
-        muduo::net::Buffer buf;
-        response.appendToBuffer(&buf);
-        // ´òÓ¡ÍêÕûµÄÏìÓ¦ÄÚÈİÓÃÓÚµ÷ÊÔ
-        LOG_INFO << "Sending response:\n" << buf.toStringPiece().as_string();
-
-        conn->send(&buf);
-        // Èç¹ûÊÇ¶ÌÁ¬½ÓµÄ»°£¬·µ»ØÏìÓ¦±¨ÎÄºó¾Í¶Ï¿ªÁ¬½Ó
-        if (response.closeConnection())
-        {
-            conn->shutdown();
-        }
+        // æ•è·å¼‚å¸¸ï¼Œè¿”å›é”™è¯¯ä¿¡æ¯
+        LOG_ERROR << "Exception in onMessage: " << e.what();
+        conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
+        conn->shutdown();
     }
+}
 
-    // Ö´ĞĞÇëÇó¶ÔÓ¦µÄÂ·ÓÉ´¦Àíº¯Êı
-    void HttpServer::handleRequest(const HttpRequest& req, HttpResponse* resp)
+void HttpServer::onRequest(const muduo::net::TcpConnectionPtr &conn, const HttpRequest &req)
+{
+    const std::string &connection = req.getHeader("Connection");
+    bool close = ((connection == "close") ||
+                  (req.getVersion() == "HTTP/1.0" && connection != "Keep-Alive"));
+    HttpResponse response(close);
+
+    // æ ¹æ®è¯·æ±‚æŠ¥æ–‡ä¿¡æ¯æ¥å°è£…å“åº”æŠ¥æ–‡å¯¹è±¡
+    httpCallback_(req, &response); // æ‰§è¡ŒonHttpCallbackå‡½æ•°
+
+    // å¯ä»¥ç»™responseè®¾ç½®ä¸€ä¸ªæˆå‘˜ï¼Œåˆ¤æ–­æ˜¯å¦è¯·æ±‚çš„æ˜¯æ–‡ä»¶ï¼Œå¦‚æœæ˜¯æ–‡ä»¶è®¾ç½®ä¸ºtrueï¼Œå¹¶ä¸”å­˜åœ¨æ–‡ä»¶ä½ç½®åœ¨è¿™é‡Œsendå‡ºå»ã€‚
+    muduo::net::Buffer buf;
+    response.appendToBuffer(&buf);
+    // æ‰“å°å®Œæ•´çš„å“åº”å†…å®¹ç”¨äºè°ƒè¯•
+    LOG_INFO << "Sending response:\n" << buf.toStringPiece().as_string();
+
+    conn->send(&buf);
+    // å¦‚æœæ˜¯çŸ­è¿æ¥çš„è¯ï¼Œè¿”å›å“åº”æŠ¥æ–‡åå°±æ–­å¼€è¿æ¥
+    if (response.closeConnection())
     {
-        try
-        {
-            // ´¦ÀíÇëÇóÇ°µÄÖĞ¼ä¼ş
-            HttpRequest mutableReq = req;
-            middlewareChain_.processBefore(mutableReq);
-
-            // Â·ÓÉ´¦Àí
-            if (!router_.route(mutableReq, resp))
-            {
-                LOG_INFO << "ÇëÇóµÄÉ¶£¬url£º" << req.method() << " " << req.path();
-                LOG_INFO << "Î´ÕÒµ½Â·ÓÉ£¬·µ»Ø404";
-                resp->setStatusCode(HttpResponse::k404NotFound);
-                resp->setStatusMessage("Not Found");
-                resp->setCloseConnection(true);
-            }
-
-            // ´¦ÀíÏìÓ¦ºóµÄÖĞ¼ä¼ş
-            middlewareChain_.processAfter(*resp);
-        }
-        catch (const HttpResponse& res)
-        {
-            // ´¦ÀíÖĞ¼ä¼şÅ×³öµÄÏìÓ¦£¨ÈçCORSÔ¤¼ìÇëÇó£©
-            *resp = res;
-        }
-        catch (const std::exception& e)
-        {
-            // ´íÎó´¦Àí
-            resp->setStatusCode(HttpResponse::k500InternalServerError);
-            resp->setBody(e.what());
-        }
+        conn->shutdown();
     }
+}
+
+// æ‰§è¡Œè¯·æ±‚å¯¹åº”çš„è·¯ç”±å¤„ç†å‡½æ•°
+void HttpServer::handleRequest(const HttpRequest &req, HttpResponse *resp)
+{
+    try
+    {
+        // å¤„ç†è¯·æ±‚å‰çš„ä¸­é—´ä»¶
+        HttpRequest mutableReq = req;
+        middlewareChain_.processBefore(mutableReq);
+
+        // è·¯ç”±å¤„ç†
+        if (!router_.route(mutableReq, resp))
+        {
+            LOG_INFO << "è¯·æ±‚çš„å•¥ï¼Œurlï¼š" << req.method() << " " << req.path();
+            LOG_INFO << "æœªæ‰¾åˆ°è·¯ç”±ï¼Œè¿”å›404";
+            resp->setStatusCode(HttpResponse::k404NotFound);
+            resp->setStatusMessage("Not Found");
+            resp->setCloseConnection(true);
+        }
+
+        // å¤„ç†å“åº”åçš„ä¸­é—´ä»¶
+        middlewareChain_.processAfter(*resp);
+    }
+    catch (const HttpResponse& res) 
+    {
+        // å¤„ç†ä¸­é—´ä»¶æŠ›å‡ºçš„å“åº”ï¼ˆå¦‚CORSé¢„æ£€è¯·æ±‚ï¼‰
+        *resp = res;
+    }
+    catch (const std::exception& e) 
+    {
+        // é”™è¯¯å¤„ç†
+        resp->setStatusCode(HttpResponse::k500InternalServerError);
+        resp->setBody(e.what());
+    }
+}
 
 } // namespace http

@@ -3,94 +3,87 @@
 #include <map>
 #include <string>
 #include <unordered_map>
+
 #include <muduo/base/Timestamp.h>
 
 namespace http
 {
 
-    class HttpRequest
+class HttpRequest
+{
+public:
+    enum Method
     {
-    public:
-        enum Method
-        {
-            kInvalid, kGet, kPost, kHead, kPut, kDelete, kOptions
-        };
-
-        HttpRequest()
-            : method_(kInvalid)
-            , version_("Unknown")
-        {
-        }
-
-        void setReceiveTime(muduo::Timestamp t);
-        muduo::Timestamp receiveTime() const { return receiveTime_; }
-
-        bool setMethod(const char* start, const char* end);
-        Method method() const { return method_; }
-
-        void setPath(const char* start, const char* end);
-        std::string path() const { return path_; }
-
-        void setPathParameters(const std::string& key, const std::string& value);
-        std::string getPathParameters(const std::string& key) const;
-
-        void setQueryParameters(const char* start, const char* end);
-        std::string getQueryParameters(const std::string& key) const;
-
-        void setVersion(std::string v)
-        {
-            version_ = v;
-        }
-
-        std::string getVersion() const
-        {
-            return version_;
-        }
-
-        void addHeader(const char* start, const char* colon, const char* end);
-        std::string getHeader(const std::string& field) const;
-
-        const std::map<std::string, std::string>& headers() const
-        {
-            return headers_;
-        }
-
-        void setBody(const std::string& body) { content_ = body; }
-        void setBody(const char* start, const char* end)
-        {
-            if (end >= start)
-            {
-                content_.assign(start, end - start);
-            }
-        }
-
-        std::string getBody() const
-        {
-            return content_;
-        }
-
-        void setContentLength(uint64_t length)
-        {
-            contentLength_ = length;
-        }
-
-        uint64_t contentLength() const
-        {
-            return contentLength_;
-        }
-
-        void swap(HttpRequest& that);
-
-    private:
-        Method                                       method_; // ÇëÇó·½·¨
-        std::string                                  version_; // http°æ±¾
-        std::string                                  path_; // ÇëÇóÂ·¾¶
-        std::unordered_map<std::string, std::string> pathParameters_; // Â·¾¶²ÎÊı
-        std::unordered_map<std::string, std::string> queryParameters_; // ²éÑ¯²ÎÊı
-        muduo::Timestamp                             receiveTime_; // ½ÓÊÕÊ±¼ä
-        std::map<std::string, std::string>           headers_; // ÇëÇóÍ·
-        std::string                                  content_; // ÇëÇóÌå
-        uint64_t                                     contentLength_{ 0 }; // ÇëÇóÌå³¤¶È
+        kInvalid, kGet, kPost, kHead, kPut, kDelete, kOptions
     };
+    
+    HttpRequest()
+        : method_(kInvalid)
+        , version_("Unknown")
+    {
+    }
+    
+    void setReceiveTime(muduo::Timestamp t);
+    muduo::Timestamp receiveTime() const { return receiveTime_; }
+    
+    bool setMethod(const char* start, const char* end);
+    Method method() const { return method_; }
+
+    void setPath(const char* start, const char* end);
+    std::string path() const { return path_; }
+
+    void setPathParameters(const std::string &key, const std::string &value);
+    std::string getPathParameters(const std::string &key) const;
+
+    void setQueryParameters(const char* start, const char* end);
+    std::string getQueryParameters(const std::string &key) const;
+    
+    void setVersion(std::string v)
+    {
+        version_ = v;
+    }
+
+    std::string getVersion() const
+    {
+        return version_;
+    }
+    
+    void addHeader(const char* start, const char* colon, const char* end);
+    std::string getHeader(const std::string& field) const;
+
+    const std::map<std::string, std::string>& headers() const
+    { return headers_; }
+
+    void setBody(const std::string& body) { content_ = body; }
+    void setBody(const char* start, const char* end) 
+    { 
+        if (end >= start) 
+        {
+            content_.assign(start, end - start); 
+        }
+    }
+    
+    std::string getBody() const
+    { return content_; }
+
+    void setContentLength(uint64_t length)
+    { contentLength_ = length; }
+    
+    uint64_t contentLength() const
+    { return contentLength_; }
+
+    void swap(HttpRequest& that);
+
+private:
+    Method                                       method_; // è¯·æ±‚æ–¹æ³•
+    std::string                                  version_; // httpç‰ˆæœ¬
+    std::string                                  path_; // è¯·æ±‚è·¯å¾„
+    std::unordered_map<std::string, std::string> pathParameters_; // è·¯å¾„å‚æ•°
+    std::unordered_map<std::string, std::string> queryParameters_; // æŸ¥è¯¢å‚æ•°
+    muduo::Timestamp                             receiveTime_; // æ¥æ”¶æ—¶é—´
+    std::map<std::string, std::string>           headers_; // è¯·æ±‚å¤´
+    std::string                                  content_; // è¯·æ±‚ä½“
+    uint64_t                                     contentLength_ { 0 }; // è¯·æ±‚ä½“é•¿åº¦
+};  
 
 } // namespace http

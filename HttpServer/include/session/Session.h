@@ -8,46 +8,40 @@
 namespace http
 {
 
-    namespace session
-    {
+namespace session
+{
 
-        class SessionManager;
+class SessionManager;
 
-        class Session : public std::enable_shared_from_this<Session>
-        {
-        public:
-            Session(const std::string& sessionId, SessionManager* sessionManager, int maxAge = 3600); // Ä¬ÈÏ1Ğ¡Ê±¹ıÆÚ
+class Session : public std::enable_shared_from_this<Session>
+{
+public:
+    Session(const std::string& sessionId, SessionManager* sessionManager, int maxAge = 3600); // é»˜è®¤1å°æ—¶è¿‡æœŸ
+    
+    const std::string& getId() const 
+    { return sessionId_; }
 
-            const std::string& getId() const
-            {
-                return sessionId_;
-            }
+    bool isExpired() const;
+    void refresh(); // åˆ·æ–°è¿‡æœŸæ—¶é—´
 
-            bool isExpired() const;
-            void refresh(); // Ë¢ĞÂ¹ıÆÚÊ±¼ä
+    void setManager(SessionManager* sessionManager) 
+    { sessionManager_ = sessionManager; }
 
-            void setManager(SessionManager* sessionManager)
-            {
-                sessionManager_ = sessionManager;
-            }
+    SessionManager* getManager() const 
+    { return sessionManager_; }
 
-            SessionManager* getManager() const
-            {
-                return sessionManager_;
-            }
+    // æ•°æ®å­˜å–
+    void setValue(const std::string&key, const std::string&value);
+    std::string getValue(const std::string&key) const;
+    void remove(const std::string&key);
+    void clear();
+private:
+    std::string                                  sessionId_;
+    std::unordered_map<std::string, std::string> data_;
+    std::chrono::system_clock::time_point        expiryTime_;
+    int                                          maxAge_; // è¿‡æœŸæ—¶é—´ï¼ˆç§’ï¼‰
+    SessionManager*                              sessionManager_;
+};
 
-            // Êı¾İ´æÈ¡
-            void setValue(const std::string& key, const std::string& value);
-            std::string getValue(const std::string& key) const;
-            void remove(const std::string& key);
-            void clear();
-        private:
-            std::string                                  sessionId_;
-            std::unordered_map<std::string, std::string> data_;
-            std::chrono::system_clock::time_point        expiryTime_;
-            int                                          maxAge_; // ¹ıÆÚÊ±¼ä£¨Ãë£©
-            SessionManager* sessionManager_;
-        };
-
-    } // namespace session
+} // namespace session
 } // namespace http

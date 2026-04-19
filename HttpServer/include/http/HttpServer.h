@@ -10,9 +10,9 @@
 #include <memory>
 #include <unordered_map>
 
+#include <muduo/base/Logging.h>
 #include <muduo/net/TcpServer.h>
 #include <muduo/net/EventLoop.h>
-#include <muduo/base/Logging.h>
 
 #include "HttpContext.h"
 #include "HttpRequest.h"
@@ -21,7 +21,7 @@
 #include "../session/SessionManager.h"
 #include "../middleware/MiddlewareChain.h"
 #include "../middleware/cors/CorsMiddleware.h"
-#include "../ssl/SslConnection.h"
+#include "../session/SslConnection.h"
 #include "../ssl/SslContext.h"
 
 class HttpRequest;
@@ -30,116 +30,116 @@ class HttpResponse;
 namespace http
 {
 
-    class HttpServer : muduo::noncopyable
+class HttpServer : muduo::noncopyable
+{
+public:
+    using HttpCallback = std::function<void (const http::HttpRequest&, http::HttpResponse*)>;
+    
+    // æ„é€ å‡½æ•°
+    HttpServer(int port,
+               const std::string& name,
+               bool useSSL = false,
+               muduo::net::TcpServer::Option option = muduo::net::TcpServer::kNoReusePort);
+    
+    void setThreadNum(int numThreads)
     {
-    public:
-        using HttpCallback = std::function<void(const http::HttpRequest&, http::HttpResponse*)>;
+        server_.setThreadNum(numThreads);
+    }
 
-        // ¹¹Ôìº¯Êı
-        HttpServer(int port,
-            const std::string& name,
-            bool useSSL = false,
-            muduo::net::TcpServer::Option option = muduo::net::TcpServer::kNoReusePort);
+    void start();
 
-        void setThreadNum(int numThreads)
-        {
-            server_.setThreadNum(numThreads);
-        }
+    muduo::net::EventLoop* getLoop() const 
+    { 
+        return server_.getLoop(); 
+    }
 
-        void start();
+    void setHttpCallback(const HttpCallback& cb)
+    {
+        httpCallback_ = cb;
+    }
 
-        muduo::net::EventLoop* getLoop() const
-        {
-            return server_.getLoop();
-        }
+    // æ³¨å†Œé™æ€è·¯ç”±å¤„ç†å™¨
+    void Get(const std::string& path, const HttpCallback& cb)
+    {
+        router_.registerCallback(HttpRequest::kGet, path, cb);
+    }
+    
+    // æ³¨å†Œé™æ€è·¯ç”±å¤„ç†å™¨
+    void Get(const std::string& path, router::Router::HandlerPtr handler)
+    {
+        router_.registerHandler(HttpRequest::kGet, path, handler);
+    }
 
-        void setHttpCallback(const HttpCallback& cb)
-        {
-            httpCallback_ = cb;
-        }
+    void Post(const std::string& path, const HttpCallback& cb)
+    {
+        router_.registerCallback(HttpRequest::kPost, path, cb);
+    }
 
-        // ×¢²á¾²Ì¬Â·ÓÉ´¦ÀíÆ÷
-        void Get(const std::string& path, const HttpCallback& cb)
-        {
-            router_.registerCallback(HttpRequest::kGet, path, cb);
-        }
+    void Post(const std::string& path, router::Router::HandlerPtr handler)
+    {
+        router_.registerHandler(HttpRequest::kPost, path, handler);
+    }
 
-        // ×¢²á¾²Ì¬Â·ÓÉ´¦ÀíÆ÷
-        void Get(const std::string& path, router::Router::HandlerPtr handler)
-        {
-            router_.registerHandler(HttpRequest::kGet, path, handler);
-        }
+    // æ³¨å†ŒåŠ¨æ€è·¯ç”±å¤„ç†å™¨
+    void addRoute(HttpRequest::Method method, const std::string& path, router::Router::HandlerPtr handler)
+    {
+        router_.addRegexHandler(method, path, handler);
+    }
 
-        void Post(const std::string& path, const HttpCallback& cb)
-        {
-            router_.registerCallback(HttpRequest::kPost, path, cb);
-        }
+    // æ³¨å†ŒåŠ¨æ€è·¯ç”±å¤„ç†å‡½æ•°
+    void addRoute(HttpRequest::Method method, const std::string& path, const router::Router::HandlerCallback& callback)
+    {
+        router_.addRegexCallback(method, path, callback);
+    }
 
-        void Post(const std::string& path, router::Router::HandlerPtr handler)
-        {
-            router_.registerHandler(HttpRequest::kPost, path, handler);
-        }
+    // è®¾ç½®ä¼šè¯ç®¡ç†å™¨
+    void setSessionManager(std::unique_ptr<session::SessionManager> manager)
+    {
+        sessionManager_ = std::move(manager);
+    }
 
-        // ×¢²á¶¯Ì¬Â·ÓÉ´¦ÀíÆ÷
-        void addRoute(HttpRequest::Method method, const std::string& path, router::Router::HandlerPtr handler)
-        {
-            router_.addRegexHandler(method, path, handler);
-        }
+    // è·å–ä¼šè¯ç®¡ç†å™¨
+    session::SessionManager* getSessionManager() const
+    {
+        return sessionManager_.get();
+    }
 
-        // ×¢²á¶¯Ì¬Â·ÓÉ´¦Àíº¯Êı
-        void addRoute(HttpRequest::Method method, const std::string& path, const router::Router::HandlerCallback& callback)
-        {
-            router_.addRegexCallback(method, path, callback);
-        }
+    // æ·»åŠ ä¸­é—´ä»¶çš„æ–¹æ³•
+    void addMiddleware(std::shared_ptr<middleware::Middleware> middleware) 
+    {
+        middlewareChain_.addMiddleware(middleware);
+    }
 
-        // ÉèÖÃ»á»°¹ÜÀíÆ÷
-        void setSessionManager(std::unique_ptr<session::SessionManager> manager)
-        {
-            sessionManager_ = std::move(manager);
-        }
+    void enableSSL(bool enable) 
+    {
+        useSSL_ = enable;
+    }
 
-        // »ñÈ¡»á»°¹ÜÀíÆ÷
-        session::SessionManager* getSessionManager() const
-        {
-            return sessionManager_.get();
-        }
+    void setSslConfig(const ssl::SslConfig& config);
 
-        // Ìí¼ÓÖĞ¼ä¼şµÄ·½·¨
-        void addMiddleware(std::shared_ptr<middleware::Middleware> middleware)
-        {
-            middlewareChain_.addMiddleware(middleware);
-        }
+private:
+    void initialize();
 
-        void enableSSL(bool enable)
-        {
-            useSSL_ = enable;
-        }
+    void onConnection(const muduo::net::TcpConnectionPtr& conn);
+    void onMessage(const muduo::net::TcpConnectionPtr& conn,
+                   muduo::net::Buffer* buf,
+                   muduo::Timestamp receiveTime);
+    void onRequest(const muduo::net::TcpConnectionPtr&, const HttpRequest&);
 
-        void setSslConfig(const ssl::SslConfig& config);
-
-    private:
-        void initialize();
-
-        void onConnection(const muduo::net::TcpConnectionPtr& conn);
-        void onMessage(const muduo::net::TcpConnectionPtr& conn,
-            muduo::net::Buffer* buf,
-            muduo::Timestamp receiveTime);
-        void onRequest(const muduo::net::TcpConnectionPtr&, const HttpRequest&);
-
-        void handleRequest(const HttpRequest& req, HttpResponse* resp);
-
-    private:
-        muduo::net::InetAddress                      listenAddr_;   // ¼àÌıµØÖ·
-        muduo::net::TcpServer                        server_;   // TCP ·şÎñÆ÷
-        muduo::net::EventLoop                        mainLoop_; // Ö÷Ñ­»·
-        HttpCallback                                 httpCallback_; // »Øµ÷º¯Êı
-        router::Router                               router_;   // Â·ÓÉ
-        std::unique_ptr<session::SessionManager>     sessionManager_;   // »á»°¹ÜÀíÆ÷
-        middleware::MiddlewareChain                  middlewareChain_;  // ÖĞ¼ä¼şÁ´
-        std::unique_ptr<ssl::SslContext>             sslCtx_;   // SSL ÉÏÏÂÎÄ
-        bool                                         useSSL_;   // ÊÇ·ñÊ¹ÓÃ SSL   
-        // TcpConnectionPtr -> SslConnectionPtr 
-        std::map<muduo::net::TcpConnectionPtr, std::unique_ptr<ssl::SslConnection>> sslConns_;
-    };
+    void handleRequest(const HttpRequest& req, HttpResponse* resp);
+    
+private:
+    muduo::net::InetAddress                      listenAddr_;   // ç›‘å¬åœ°å€
+	muduo::net::TcpServer                        server_;   // TCP æœåŠ¡å™¨
+    muduo::net::EventLoop                        mainLoop_; // ä¸»å¾ªç¯
+    HttpCallback                                 httpCallback_; // å›è°ƒå‡½æ•°
+    router::Router                               router_;   // è·¯ç”±
+    std::unique_ptr<session::SessionManager>     sessionManager_;   // ä¼šè¯ç®¡ç†å™¨
+    middleware::MiddlewareChain                  middlewareChain_;  // ä¸­é—´ä»¶é“¾
+    std::unique_ptr<ssl::SslContext>             sslCtx_;   // SSL ä¸Šä¸‹æ–‡
+    bool                                         useSSL_;   // æ˜¯å¦ä½¿ç”¨ SSL   
+    // TcpConnectionPtr -> SslConnectionPtr 
+    std::map<muduo::net::TcpConnectionPtr, std::unique_ptr<ssl::SslConnection>> sslConns_;
+}; 
 
 } // namespace http
