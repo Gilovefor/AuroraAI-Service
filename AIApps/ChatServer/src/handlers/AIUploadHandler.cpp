@@ -22,13 +22,10 @@ void AIUploadHandler::handle(const http::HttpRequest& req, http::HttpResponse* r
             return;
         }
 
-        int userId = std::stoi(session->getValue("userId"));
-        std::string username = session->getValue("username");
-
 #ifdef CHATSERVER_RESOURCE_DIR
-        std::string reqFile(std::string(CHATSERVER_RESOURCE_DIR) + "/upload.html");
+        std::string reqFile(std::string(CHATSERVER_RESOURCE_DIR) + "/dist/index.html");
 #else
-        std::string reqFile("../AIApps/ChatServer/resource/upload.html");
+        std::string reqFile("../AIApps/ChatServer/resource/dist/index.html");
 #endif
         FileUtil fileOperater(reqFile);
         if (!fileOperater.isValid())
@@ -40,17 +37,12 @@ void AIUploadHandler::handle(const http::HttpRequest& req, http::HttpResponse* r
         std::vector<char> buffer(fileOperater.size());
         fileOperater.readFile(buffer); 
         std::string htmlContent(buffer.data(), buffer.size());
-
-
-        size_t headEnd = htmlContent.find("</head>");
-        if (headEnd != std::string::npos)
-        {
-            std::string script = "<script>const userId = '" + std::to_string(userId) + "';</script>";
-            htmlContent.insert(headEnd, script);
-        }
         resp->setStatusLine(req.getVersion(), http::HttpResponse::k200Ok, "OK");
         resp->setCloseConnection(false);
         resp->setContentType("text/html");
+        resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        resp->addHeader("Pragma", "no-cache");
+        resp->addHeader("Expires", "0");
         resp->setContentLength(htmlContent.size());
         resp->setBody(htmlContent);
     }
