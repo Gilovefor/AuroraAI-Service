@@ -18,7 +18,7 @@ void executeMysql(const std::string sql) {
     http::MysqlUtil mysqlUtil_;
     mysqlUtil_.executeUpdate(sql);
 }
- 
+
 
 int main(int argc, char* argv[]) {
 	LOG_INFO << "pid = " << getpid();

@@ -21,59 +21,11 @@
 #include <cppconn/connection.h>
 #include <cppconn/statement.h>
 #include <mysql_driver.h>
-#include <filesystem>
 
 using namespace http;
 
 namespace
 {
-std::string getContentTypeByExtension(const std::filesystem::path& filePath)
-{
-    const std::string ext = filePath.extension().string();
-    if (ext == ".js") return "application/javascript; charset=utf-8";
-    if (ext == ".css") return "text/css; charset=utf-8";
-    if (ext == ".html") return "text/html; charset=utf-8";
-    if (ext == ".json") return "application/json; charset=utf-8";
-    if (ext == ".svg") return "image/svg+xml";
-    if (ext == ".png") return "image/png";
-    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
-    if (ext == ".webp") return "image/webp";
-    if (ext == ".ico") return "image/x-icon";
-    if (ext == ".woff") return "font/woff";
-    if (ext == ".woff2") return "font/woff2";
-    return "application/octet-stream";
-}
-
-void writeStaticFileResponse(const http::HttpRequest& req,
-                             http::HttpResponse* resp,
-                             const std::filesystem::path& filePath,
-                             const std::string& contentType,
-                             const std::string& cacheControl)
-{
-    FileUtil fileOperater(filePath.string());
-    if (!fileOperater.isValid())
-    {
-        const std::string notFound = "Not Found";
-        resp->setStatusLine(req.getVersion(), http::HttpResponse::k404NotFound, "Not Found");
-        resp->setCloseConnection(false);
-        resp->setContentType("text/plain; charset=utf-8");
-        resp->setContentLength(notFound.size());
-        resp->setBody(notFound);
-        return;
-    }
-
-    std::vector<char> buffer(fileOperater.size());
-    fileOperater.readFile(buffer);
-    std::string body(buffer.data(), buffer.size());
-
-    resp->setStatusLine(req.getVersion(), http::HttpResponse::k200Ok, "OK");
-    resp->setCloseConnection(false);
-    resp->setContentType(contentType);
-    resp->addHeader("Cache-Control", cacheControl);
-    resp->setContentLength(body.size());
-    resp->setBody(body);
-}
-
 std::string getEnvOrDefault(const char* key, const std::string& defaultValue)
 {
     const char* value = std::getenv(key);
@@ -220,63 +172,29 @@ void ChatServer::initializeRouter() {
 
     httpServer_.Get("/", std::make_shared<ChatEntryHandler>(this));
     httpServer_.Get("/entry", std::make_shared<ChatEntryHandler>(this));
-
-    auto registerImageRoute = [this](const std::string& routePath, const std::string& fileName) {
-        httpServer_.Get(routePath, [fileName](const http::HttpRequest& req, http::HttpResponse* resp) {
-#ifdef CHATSERVER_RESOURCE_DIR
-            std::filesystem::path imagePath = std::filesystem::path(CHATSERVER_RESOURCE_DIR).parent_path().parent_path() / "images" / fileName;
-#else
-            std::filesystem::path imagePath = std::filesystem::path("../AIApps/images") / fileName;
-#endif
-            FileUtil fileOperater(imagePath.string());
-            if (!fileOperater.isValid())
-            {
-                const std::string notFound = "Image not found";
-                resp->setStatusLine(req.getVersion(), http::HttpResponse::k404NotFound, "Not Found");
-                resp->setCloseConnection(false);
-                resp->setContentType("text/plain; charset=utf-8");
-                resp->setContentLength(notFound.size());
-                resp->setBody(notFound);
-                return;
-            }
-
-            std::vector<char> buffer(fileOperater.size());
-            fileOperater.readFile(buffer);
-            std::string imageBody(buffer.data(), buffer.size());
-
-            resp->setStatusLine(req.getVersion(), http::HttpResponse::k200Ok, "OK");
-            resp->setCloseConnection(false);
-            resp->setContentType("image/jpeg");
-            resp->setContentLength(imageBody.size());
-            resp->setBody(imageBody);
-        });
-    };
-
-    registerImageRoute("/assets/entry_pic.jpg", "entry_pic.jpg");
-    registerImageRoute("/assets/404NotFound_pic.jpg", "404NotFound_pic.jpg");
-    registerImageRoute("/assets/upload_pic.jpg", "upload_pic.jpg");
-
-    httpServer_.addRoute(http::HttpRequest::kGet, "/assets/:file", [](const http::HttpRequest& req, http::HttpResponse* resp) {
-        const std::string fileName = req.getPathParameters("param1");
-#ifdef CHATSERVER_WEB_DIST_DIR
-        const std::filesystem::path filePath = std::filesystem::path(CHATSERVER_WEB_DIST_DIR) / "assets" / fileName;
-#else
-        const std::filesystem::path filePath = std::filesystem::path("../AIApps/ChatServer/web/dist/assets") / fileName;
-#endif
-        writeStaticFileResponse(req, resp, filePath, getContentTypeByExtension(filePath), "public, max-age=31536000, immutable");
-});
-
+    
     httpServer_.Post("/login", std::make_shared<ChatLoginHandler>(this));
+    
     httpServer_.Post("/register", std::make_shared<ChatRegisterHandler>(this));
+    
     httpServer_.Post("/user/logout", std::make_shared<ChatLogoutHandler>(this));
+
     httpServer_.Get("/chat", std::make_shared<ChatHandler>(this));
+
     httpServer_.Post("/chat/send", std::make_shared<ChatSendHandler>(this));
+ 
     httpServer_.Get("/menu", std::make_shared<AIMenuHandler>(this));
+    
     httpServer_.Get("/upload", std::make_shared<AIUploadHandler>(this));
+   
     httpServer_.Post("/upload/send", std::make_shared<AIUploadSendHandler>(this));
+    
     httpServer_.Post("/chat/history", std::make_shared<ChatHistoryHandler>(this));
+
+    
     httpServer_.Post("/chat/send-new-session", std::make_shared<ChatCreateAndSendHandler>(this));
     httpServer_.Get("/chat/sessions", std::make_shared<ChatSessionsHandler>(this));
+
     httpServer_.Post("/chat/tts", std::make_shared<ChatSpeechHandler>(this));
 }
 

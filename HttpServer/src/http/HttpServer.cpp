@@ -153,7 +153,6 @@ void HttpServer::onRequest(const muduo::net::TcpConnectionPtr &conn, const HttpR
 
     // 根据请求报文信息来封装响应报文对象
     httpCallback_(req, &response); // 执行onHttpCallback函数
-    LOG_WARN << "HTTP " << req.method() << " " << req.path() << " -> " << static_cast<int>(response.getStatusCode());
 
     // 可以给response设置一个成员，判断是否请求的是文件，如果是文件设置为true，并且存在文件位置在这里send出去。
     muduo::net::Buffer buf;

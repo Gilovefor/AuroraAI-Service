@@ -5,10 +5,10 @@
 void ChatEntryHandler::handle(const http::HttpRequest& req, http::HttpResponse* resp)
 {
     std::string reqFile;
-#ifdef CHATSERVER_WEB_DIST_DIR
-    reqFile = std::string(CHATSERVER_WEB_DIST_DIR) + "/index.html";
+#ifdef CHATSERVER_RESOURCE_DIR
+    reqFile = std::string(CHATSERVER_RESOURCE_DIR) + "/entry.html";
 #else
-    reqFile = "../AIApps/ChatServer/web/dist/index.html";
+    reqFile = "../AIApps/ChatServer/resource/entry.html";
 #endif
 
     FileUtil fileOperater(reqFile);
@@ -25,9 +25,6 @@ void ChatEntryHandler::handle(const http::HttpRequest& req, http::HttpResponse* 
     resp->setStatusLine(req.getVersion(), http::HttpResponse::k200Ok, "OK");
     resp->setCloseConnection(false);
     resp->setContentType("text/html");
-    resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-    resp->addHeader("Pragma", "no-cache");
-    resp->addHeader("Expires", "0");
     resp->setContentLength(bufStr.size());
     resp->setBody(bufStr);
 }

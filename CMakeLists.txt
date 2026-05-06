@@ -5,11 +5,6 @@ project(http_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ================= Vue/Node 构建配置 =================
-option(CHATSERVER_BUILD_WEB "Build ChatServer Vue frontend with npm" ON)
-set(CHATSERVER_WEB_DIR "${PROJECT_SOURCE_DIR}/AIApps/ChatServer/web")
-set(CHATSERVER_WEB_DIST_DIR "${CHATSERVER_WEB_DIR}/dist")
-
 # ================= 第三方库 =================
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
@@ -148,36 +143,5 @@ message(STATUS "ONNX Runtime: ${ONNXRUNTIME_LIBRARY}")
 message(STATUS "OpenCV: ${OpenCV_LIBS}")
 
 target_compile_definitions(http_server
-    PRIVATE CHATSERVER_WEB_DIST_DIR="${CHATSERVER_WEB_DIST_DIR}"
+    PRIVATE CHATSERVER_RESOURCE_DIR="${PROJECT_SOURCE_DIR}/AIApps/ChatServer/resource"
 )
-
-# ================= 前端构建（Node.js + Vue） =================
-if(CHATSERVER_BUILD_WEB)
-    if(NOT EXISTS "${CHATSERVER_WEB_DIR}/package.json")
-        message(FATAL_ERROR "Vue frontend not found: ${CHATSERVER_WEB_DIR}/package.json")
-    endif()
-
-    find_program(NPM_EXECUTABLE npm REQUIRED)
-    message(STATUS "Vue frontend build enabled: ${CHATSERVER_WEB_DIR}")
-
-    file(GLOB_RECURSE CHATSERVER_WEB_INPUTS CONFIGURE_DEPENDS
-        "${CHATSERVER_WEB_DIR}/src/*"
-        "${CHATSERVER_WEB_DIR}/public/*"
-        "${CHATSERVER_WEB_DIR}/index.html"
-        "${CHATSERVER_WEB_DIR}/vite.config.js"
-        "${CHATSERVER_WEB_DIR}/package.json"
-        "${CHATSERVER_WEB_DIR}/package-lock.json"
-    )
-
-    add_custom_command(
-        OUTPUT "${CHATSERVER_WEB_DIST_DIR}/index.html"
-        COMMAND ${CMAKE_COMMAND} -E chdir "${CHATSERVER_WEB_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${CHATSERVER_WEB_DIR}" ${NPM_EXECUTABLE} run build
-        DEPENDS ${CHATSERVER_WEB_INPUTS}
-        COMMENT "Building Vue frontend assets..."
-        VERBATIM
-    )
-
-    add_custom_target(chatserver_web_build DEPENDS "${CHATSERVER_WEB_DIST_DIR}/index.html")
-    add_dependencies(http_server chatserver_web_build)
-endif()

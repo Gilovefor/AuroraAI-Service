@@ -22,10 +22,14 @@ void ChatHandler::handle(const http::HttpRequest& req, http::HttpResponse* resp)
             return;
         }
 
-#ifdef CHATSERVER_WEB_DIST_DIR
-        std::string reqFile(std::string(CHATSERVER_WEB_DIST_DIR) + "/index.html");
+
+        int userId = std::stoi(session->getValue("userId"));
+        std::string username = session->getValue("username");
+
+#ifdef CHATSERVER_RESOURCE_DIR
+        std::string reqFile(std::string(CHATSERVER_RESOURCE_DIR) + "/AI.html");
 #else
-        std::string reqFile("../AIApps/ChatServer/web/dist/index.html");
+        std::string reqFile("../AIApps/ChatServer/resource/AI.html");
 #endif
         FileUtil fileOperater(reqFile);
         if (!fileOperater.isValid())
@@ -37,12 +41,20 @@ void ChatHandler::handle(const http::HttpRequest& req, http::HttpResponse* resp)
         std::vector<char> buffer(fileOperater.size());
         fileOperater.readFile(buffer); 
         std::string htmlContent(buffer.data(), buffer.size());
+
+
+        size_t headEnd = htmlContent.find("</head>");
+        if (headEnd != std::string::npos)
+        {
+            std::string script = "<script>const userId = '" + std::to_string(userId) + "';</script>";
+            htmlContent.insert(headEnd, script);
+        }
+
+        // server_->packageResp(req.getVersion(), HttpResponse::k200Ok, "OK"
+        //             , false, "text/html", htmlContent.size(), htmlContent, resp);
         resp->setStatusLine(req.getVersion(), http::HttpResponse::k200Ok, "OK");
         resp->setCloseConnection(false);
         resp->setContentType("text/html");
-        resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-        resp->addHeader("Pragma", "no-cache");
-        resp->addHeader("Expires", "0");
         resp->setContentLength(htmlContent.size());
         resp->setBody(htmlContent);
     }
