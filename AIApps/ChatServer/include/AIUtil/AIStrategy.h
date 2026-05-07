@@ -39,7 +39,7 @@ class AliyunStrategy : public AIStrategy {
 public:
     AliyunStrategy() {
         const char* key = std::getenv("DASHSCOPE_API_KEY");
-        if (!key) throw std::runtime_error("Aliyun API Key not found!");
+        if (!key) throw std::runtime_error("Aliyun API Key not found! why baby");
         apiKey_ = key;
         isMCPModel = false;
     }

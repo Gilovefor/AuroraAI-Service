@@ -1,13 +1,25 @@
 #include"../include/AIUtil/MQManager.h"
+#include <cstdlib>
+
+namespace {
+std::string getEnvOrDefault(const char* key, const std::string& defaultValue) {
+    const char* value = std::getenv(key);
+    return (value == nullptr || *value == '\0') ? defaultValue : std::string(value);
+}
+}
 
 // ------------------- MQManager -------------------
 MQManager::MQManager(size_t poolSize)
     : poolSize_(poolSize), counter_(0) {
+    const std::string host = getEnvOrDefault("RABBITMQ_HOST", "localhost");
+    const int port = std::stoi(getEnvOrDefault("RABBITMQ_PORT", "5672"));
+    const std::string user = getEnvOrDefault("RABBITMQ_USER", "guest");
+    const std::string password = getEnvOrDefault("RABBITMQ_PASSWORD", "guest");
+    const std::string vhost = getEnvOrDefault("RABBITMQ_VHOST", "/");
+
     for (size_t i = 0; i < poolSize_; ++i) {
         auto conn = std::make_shared<MQConn>();
-        //  Create
-        //conn->channel = AmqpClient::Channel::Create("localhost", 5672, "guest", "guest", "/");
-        conn->channel = AmqpClient::Channel::Open(AmqpClient::Channel::OpenOpts{});
+        conn->channel = AmqpClient::Channel::Create(host, port, user, password, vhost);
         pool_.push_back(conn);
     }
 }

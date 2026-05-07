@@ -37,7 +37,36 @@ json AliyunStrategy::buildRequest(const std::vector<std::pair<std::string, long 
 }
 
 
+namespace {
+std::string extractErrorMessage(const json& response) {
+    if (response.contains("error")) {
+        const auto& err = response["error"];
+        if (err.is_string()) {
+            return err.get<std::string>();
+        }
+        if (err.is_object()) {
+            if (err.contains("message") && err["message"].is_string()) {
+                return err["message"].get<std::string>();
+            }
+            if (err.contains("msg") && err["msg"].is_string()) {
+                return err["msg"].get<std::string>();
+            }
+        }
+        return err.dump();
+    }
+    if (response.contains("message") && response["message"].is_string()) {
+        return response["message"].get<std::string>();
+    }
+    return {};
+}
+} // namespace
+
+
 std::string AliyunStrategy::parseResponse(const json& response) const {
+    std::string err = extractErrorMessage(response);
+    if (!err.empty()) {
+        return "[Error] " + err;
+    }
     if (response.contains("choices") && !response["choices"].empty()) {
         return response["choices"][0]["message"]["content"];
     }
@@ -79,6 +108,10 @@ json DouBaoStrategy::buildRequest(const std::vector<std::pair<std::string, long 
 
 
 std::string DouBaoStrategy::parseResponse(const json& response) const {
+    std::string err = extractErrorMessage(response);
+    if (!err.empty()) {
+        return "[Error] " + err;
+    }
     if (response.contains("choices") && !response["choices"].empty()) {
         return response["choices"][0]["message"]["content"];
     }
@@ -120,6 +153,10 @@ json AliyunRAGStrategy::buildRequest(const std::vector<std::pair<std::string, lo
 
 
 std::string AliyunRAGStrategy::parseResponse(const json& response) const {
+    std::string err = extractErrorMessage(response);
+    if (!err.empty()) {
+        return "[Error] " + err;
+    }
     if (response.contains("output") && response["output"].contains("text")) {
         return response["output"]["text"];
     }
@@ -164,6 +201,10 @@ json AliyunMcpStrategy::buildRequest(const std::vector<std::pair<std::string, lo
 
 
 std::string AliyunMcpStrategy::parseResponse(const json& response) const {
+    std::string err = extractErrorMessage(response);
+    if (!err.empty()) {
+        return "[Error] " + err;
+    }
     if (response.contains("choices") && !response["choices"].empty()) {
         return response["choices"][0]["message"]["content"];
     }
